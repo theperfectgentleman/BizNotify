@@ -1,7 +1,8 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import {
-    LayoutDashboard, Users, FolderOpen, Send, BarChart2, LogOut, Zap
+    LayoutDashboard, Users, FolderOpen, Send, BarChart2, LogOut, Zap, ShieldCheck, Sun, Moon
 } from 'lucide-react';
 
 const navItems = [
@@ -14,6 +15,7 @@ const navItems = [
 
 export default function Sidebar() {
     const { user, logout } = useAuth();
+    const { theme, toggleTheme } = useTheme();
     const navigate = useNavigate();
 
     const handleLogout = () => {
@@ -44,9 +46,30 @@ export default function Sidebar() {
                         {label}
                     </NavLink>
                 ))}
+
+                {user?.role === 'admin' && (
+                    <>
+                        <div className="sidebar-section-label" style={{ marginTop: 16 }}>Admin</div>
+                        <NavLink
+                            to="/app/users"
+                            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+                        >
+                            <ShieldCheck size={16} />
+                            Manage Users
+                        </NavLink>
+                    </>
+                )}
             </nav>
 
-            <div className="sidebar-footer">
+            <div className="sidebar-footer" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <button
+                    onClick={toggleTheme}
+                    className="btn btn-secondary btn-sm"
+                    style={{ justifyContent: 'center', width: '100%', padding: '8px 0' }}
+                >
+                    {theme === 'light' ? <Moon size={14} /> : <Sun size={14} />}
+                    <span style={{ marginLeft: 8 }}>{theme === 'light' ? 'Dark Mode' : 'Light Mode'}</span>
+                </button>
                 <div className="user-pill">
                     <div className="user-avatar">{initials}</div>
                     <div className="user-info">

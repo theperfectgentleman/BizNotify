@@ -110,102 +110,292 @@ function AddContactModal({ onClose, onSaved, groups }) {
     );
 }
 
+// ── Stage badge helper ───────────────────────────────────────────────────────
+function StageDots({ stage }) {
+    return (
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginBottom: 4 }}>
+            {[1, 2, 3].map(n => (
+                <div key={n} style={{
+                    width: 7, height: 7, borderRadius: '50%',
+                    background: n <= stage ? 'var(--clr-accent)' : 'var(--clr-surface-3)',
+                    transition: 'background 0.2s',
+                }} />
+            ))}
+        </div>
+    );
+}
+
 function ImportModal({ onClose, onSaved, groups }) {
+    // stage: 1 = pick file, 2 = prescan preview, 3 = import result
+    const [stage, setStage] = useState(1);
     const [file, setFile] = useState(null);
     const [groupId, setGroupId] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [result, setResult] = useState(null);
+    const [scanning, setScanning] = useState(false);
+    const [scan, setScan] = useState(null);    // prescan result
+    const [importing, setImporting] = useState(false);
+    const [result, setResult] = useState(null);   // import result
     const fileRef = useRef();
 
-    const submit = async (e) => {
-        e.preventDefault();
+    // Auto-prescan whenever a file is chosen
+    const handleFileChange = async (e) => {
+        const chosen = e.target.files[0];
+        if (!chosen) return;
+        setFile(chosen);
+        setScan(null);
+        setScanning(true);
+        setStage(2);
+        const fd = new FormData();
+        fd.append('file', chosen);
+        try {
+            const { data } = await api.post('/contacts/import/prescan', fd, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            setScan(data);
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Pre-scan failed');
+            setStage(1);
+            setFile(null);
+        } finally {
+            setScanning(false);
+        }
+    };
+
+    const doImport = async () => {
         if (!file) return;
-        setLoading(true);
+        setImporting(true);
         const fd = new FormData();
         fd.append('file', file);
         if (groupId) fd.append('group_id', groupId);
         try {
-            const { data } = await api.post('/contacts/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+            const { data } = await api.post('/contacts/import', fd, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
             setResult(data);
+            setStage(3);
             onSaved();
         } catch (err) {
             toast.error(err.response?.data?.error || 'Import failed');
         } finally {
-            setLoading(false);
+            setImporting(false);
         }
     };
 
+    const reset = () => {
+        setStage(1); setFile(null); setScan(null); setResult(null);
+        if (fileRef.current) fileRef.current.value = '';
+    };
+
+    const ColPill = ({ label, value }) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+            <span style={{ color: 'var(--clr-text-3)' }}>{label}:</span>
+            {value
+                ? <span style={{ color: 'var(--clr-accent)', fontWeight: 600 }}>{value}</span>
+                : <span style={{ color: 'var(--clr-text-3)', fontStyle: 'italic' }}>not found</span>}
+        </div>
+    );
+
     return (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-            <div className="modal">
+            <div className="modal" style={{ maxWidth: 560, width: '100%' }}>
                 <div className="modal-header">
-                    <div className="modal-title">Bulk Import</div>
+                    <div>
+                        <div className="modal-title">Bulk Import</div>
+                        <StageDots stage={stage} />
+                    </div>
                     <button className="btn btn-icon btn-ghost" onClick={onClose}><X size={18} /></button>
                 </div>
-                {result ? (
-                    <div style={{ padding: '8px 0' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            <div style={{ background: 'var(--clr-surface-2)', borderRadius: 'var(--radius-md)', padding: 20, display: 'flex', gap: 32, justifyContent: 'center' }}>
-                                <div style={{ textAlign: 'center' }}>
-                                    <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--clr-green)' }}>{result.imported}</div>
-                                    <div style={{ fontSize: 12, color: 'var(--clr-text-2)' }}>Imported</div>
-                                </div>
-                                <div style={{ textAlign: 'center' }}>
-                                    <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--clr-amber)' }}>{result.skipped}</div>
-                                    <div style={{ fontSize: 12, color: 'var(--clr-text-2)' }}>Skipped</div>
-                                </div>
-                                <div style={{ textAlign: 'center' }}>
-                                    <div style={{ fontSize: 28, fontWeight: 700 }}>{result.total}</div>
-                                    <div style={{ fontSize: 12, color: 'var(--clr-text-2)' }}>Total Rows</div>
-                                </div>
-                            </div>
-                            {result.errors?.length > 0 && (
-                                <div style={{ fontSize: 12, color: 'var(--clr-text-3)' }}>
-                                    First {result.errors.length} skip reason(s): {result.errors[0]?.reason}
-                                </div>
-                            )}
-                        </div>
-                        <div className="modal-footer">
-                            <button className="btn btn-primary" onClick={onClose}>Done</button>
-                        </div>
-                    </div>
-                ) : (
-                    <form onSubmit={submit}>
+
+                {/* ── STAGE 1: File select ───────────────────────────────── */}
+                {stage === 1 && (
+                    <>
                         <div className="modal-body">
                             <div
-                                className={`dropzone ${file ? 'active' : ''}`}
+                                className="dropzone"
                                 onClick={() => fileRef.current.click()}
                             >
                                 <div className="dropzone-icon">📄</div>
-                                <div className="dropzone-text">{file ? file.name : 'Click to select a CSV file'}</div>
-                                <div className="dropzone-hint">Columns: phone_number, first_name, last_name</div>
-                                <input ref={fileRef} type="file" accept=".csv" hidden onChange={e => setFile(e.target.files[0])} />
+                                <div className="dropzone-text">Click to select a CSV file</div>
+                                <div className="dropzone-hint">
+                                    Any column naming works — phone, mobile, first name, surname, etc.
+                                </div>
+                                <input
+                                    ref={fileRef} type="file" accept=".csv,.tsv,.txt" hidden
+                                    onChange={handleFileChange}
+                                />
                             </div>
-                            <div style={{ textAlign: 'center' }}>
+                            <div style={{ textAlign: 'center', marginTop: 8 }}>
                                 <button
-                                    type="button"
-                                    className="btn btn-ghost btn-sm"
-                                    onClick={(e) => { e.stopPropagation(); downloadCsvTemplate(); }}
+                                    type="button" className="btn btn-ghost btn-sm"
+                                    onClick={downloadCsvTemplate}
                                     style={{ fontSize: 13, color: 'var(--clr-accent)' }}
                                 >
                                     <Download size={13} /> Download CSV Template
                                 </button>
                             </div>
-                            <div className="form-group">
-                                <label className="form-label">Add to Group (optional)</label>
-                                <select className="form-select" value={groupId} onChange={e => setGroupId(e.target.value)}>
-                                    <option value="">No group</option>
-                                    {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                                </select>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+                        </div>
+                    </>
+                )}
+
+                {/* ── STAGE 2: Prescan preview ───────────────────────────── */}
+                {stage === 2 && (
+                    <>
+                        <div className="modal-body">
+                            {scanning ? (
+                                <div className="loading-center" style={{ padding: 32 }}>
+                                    <span className="spinner" />
+                                    <span style={{ marginLeft: 12, color: 'var(--clr-text-2)', fontSize: 14 }}>Scanning file…</span>
+                                </div>
+                            ) : scan && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                    {/* File info */}
+                                    <div style={{ fontSize: 13, color: 'var(--clr-text-2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <span>📄</span>
+                                        <strong style={{ color: 'var(--clr-text-1)' }}>{file.name}</strong>
+                                        <span>·</span>
+                                        <span>{scan.totalRows} row{scan.totalRows !== 1 ? 's' : ''}</span>
+                                    </div>
+
+                                    {/* Stats */}
+                                    <div style={{ display: 'flex', gap: 12 }}>
+                                        <div style={{ flex: 1, background: 'var(--clr-surface-2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', textAlign: 'center' }}>
+                                            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--clr-green)' }}>{scan.validCount}</div>
+                                            <div style={{ fontSize: 11, color: 'var(--clr-text-2)', marginTop: 2 }}>Ready to import</div>
+                                        </div>
+                                        <div style={{ flex: 1, background: 'var(--clr-surface-2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', textAlign: 'center' }}>
+                                            <div style={{ fontSize: 24, fontWeight: 700, color: scan.invalidCount > 0 ? 'var(--clr-amber)' : 'var(--clr-text-3)' }}>{scan.invalidCount}</div>
+                                            <div style={{ fontSize: 11, color: 'var(--clr-text-2)', marginTop: 2 }}>Will be skipped</div>
+                                        </div>
+                                    </div>
+
+                                    {/* Detected columns */}
+                                    <div style={{ background: 'var(--clr-surface-2)', borderRadius: 'var(--radius-md)', padding: '10px 14px' }}>
+                                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--clr-text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                                            Detected Column Mapping
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 24px' }}>
+                                            <ColPill label="Phone" value={scan.detectedCols?.phone} />
+                                            <ColPill label="First Name" value={scan.detectedCols?.firstName} />
+                                            <ColPill label="Last Name" value={scan.detectedCols?.lastName} />
+                                        </div>
+                                    </div>
+
+                                    {/* Issues table */}
+                                    {scan.issues?.length > 0 && (
+                                        <div>
+                                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--clr-amber)', marginBottom: 6 }}>
+                                                ⚠ {scan.invalidCount} row{scan.invalidCount !== 1 ? 's' : ''} have issues
+                                                {scan.invalidCount > scan.issues.length && ` (showing first ${scan.issues.length})`}
+                                            </div>
+                                            <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius-md)' }}>
+                                                <table style={{ width: '100%', fontSize: 12 }}>
+                                                    <thead>
+                                                        <tr>
+                                                            <th style={{ width: 60 }}>Row</th>
+                                                            <th>Issue</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {scan.issues.map((iss, i) => (
+                                                            <tr key={i}>
+                                                                <td style={{ color: 'var(--clr-text-3)' }}>#{iss.row}</td>
+                                                                <td style={{ color: 'var(--clr-amber)' }}>{iss.reason}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {scan.validCount === 0 && (
+                                        <div style={{ fontSize: 13, color: 'var(--clr-red)', textAlign: 'center', padding: '8px 0' }}>
+                                            No valid rows found. Please fix the file and try again.
+                                        </div>
+                                    )}
+
+                                    {/* Group select */}
+                                    {scan.validCount > 0 && (
+                                        <div className="form-group" style={{ marginBottom: 0 }}>
+                                            <label className="form-label">Add to Group (optional)</label>
+                                            <select className="form-select" value={groupId} onChange={e => setGroupId(e.target.value)}>
+                                                <option value="">No group</option>
+                                                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                                            </select>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={reset}>← Change File</button>
+                            <button
+                                className="btn btn-primary"
+                                disabled={importing || !scan || scan.validCount === 0}
+                                onClick={doImport}
+                            >
+                                {importing
+                                    ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Importing…</>
+                                    : <><Upload size={14} /> Import {scan?.validCount ?? ''} Contacts</>}
+                            </button>
+                        </div>
+                    </>
+                )}
+
+                {/* ── STAGE 3: Import result ─────────────────────────────── */}
+                {stage === 3 && result && (
+                    <>
+                        <div className="modal-body">
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                <div style={{ background: 'var(--clr-surface-2)', borderRadius: 'var(--radius-md)', padding: 20, display: 'flex', gap: 32, justifyContent: 'center' }}>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--clr-green)' }}>{result.imported}</div>
+                                        <div style={{ fontSize: 12, color: 'var(--clr-text-2)' }}>Imported</div>
+                                    </div>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--clr-amber)' }}>{result.skipped}</div>
+                                        <div style={{ fontSize: 12, color: 'var(--clr-text-2)' }}>Skipped</div>
+                                    </div>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: 32, fontWeight: 700 }}>{result.total}</div>
+                                        <div style={{ fontSize: 12, color: 'var(--clr-text-2)' }}>Total Rows</div>
+                                    </div>
+                                </div>
+
+                                {result.errors?.length > 0 && (
+                                    <div>
+                                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--clr-amber)', marginBottom: 6 }}>
+                                            Skipped rows
+                                        </div>
+                                        <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius-md)' }}>
+                                            <table style={{ width: '100%', fontSize: 12 }}>
+                                                <thead>
+                                                    <tr>
+                                                        <th style={{ width: 60 }}>Row</th>
+                                                        <th>Reason</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {result.errors.map((e, i) => (
+                                                        <tr key={i}>
+                                                            <td style={{ color: 'var(--clr-text-3)' }}>#{e.row}</td>
+                                                            <td style={{ color: 'var(--clr-amber)' }}>{e.reason}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                         <div className="modal-footer">
-                            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-                            <button type="submit" className="btn btn-primary" disabled={loading || !file}>
-                                {loading ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Importing…</> : <><Upload size={14} /> Import</>}
-                            </button>
+                            <button className="btn btn-secondary" onClick={reset}>Import Another</button>
+                            <button className="btn btn-primary" onClick={onClose}>Done</button>
                         </div>
-                    </form>
+                    </>
                 )}
             </div>
         </div>
