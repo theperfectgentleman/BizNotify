@@ -48,6 +48,45 @@ async function sendSms(to, message, channel = 'generic') {
 }
 
 /**
+ * Send bulk SMS via Termii (no personalization).
+ * @param {string[]} toArray - Array of normalized phone numbers
+ * @param {string} message - Message body
+ * @param {string} channel - 'generic' | 'whatsapp'
+ */
+async function sendBulkSms(toArray, message, channel = 'generic') {
+    const payload = {
+        to: toArray,
+        from: senderId,
+        sms: message,
+        type: 'plain',
+        channel,
+        api_key: apiKey
+    };
+
+    try {
+        const res = await fetch(`${baseUrl}/api/sms/send/bulk`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            console.error(`[Termii] sendBulkSms returned ${res.status}:`, data);
+            return { success: false, error: data.message || 'Termii error' };
+        }
+
+        return { success: true, messageId: data.message_id };
+    } catch (error) {
+        console.error(`[Termii] sendBulkSms failed:`, error.message);
+        return { success: false, error: error.message || 'Unknown Termii error' };
+    }
+}
+
+/**
  * Get Termii account balance.
  * Used for the dashboard summary card.
  */
@@ -123,4 +162,4 @@ async function requestSenderId(sender_id, usecase, company) {
     }
 }
 
-module.exports = { sendSms, getBalance, fetchSenderIds, requestSenderId };
+module.exports = { sendSms, sendBulkSms, getBalance, fetchSenderIds, requestSenderId };

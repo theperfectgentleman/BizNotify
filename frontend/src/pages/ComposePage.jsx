@@ -3,6 +3,7 @@ import api from '../services/api';
 import toast from 'react-hot-toast';
 import { Send, MessageSquare, Type } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import PropTypes from 'prop-types';
 
 const MAX_SMS_CHARS = 160;
 
@@ -18,6 +19,10 @@ function CharCounter({ text }) {
     );
 }
 
+CharCounter.propTypes = {
+    text: PropTypes.string.isRequired,
+};
+
 export default function ComposePage() {
     const navigate = useNavigate();
     const [groups, setGroups] = useState([]);
@@ -26,9 +31,11 @@ export default function ComposePage() {
         message_body: '',
         channel: 'sms',
         group_ids: [],
+        phone_number: '',
         sendMode: 'now',
         scheduled_at: '',
     });
+    const [mode, setMode] = useState('campaign'); // 'campaign' or 'instant'
     const [loading, setLoading] = useState(false);
     const [preview, setPreview] = useState('');
 
@@ -41,9 +48,9 @@ export default function ComposePage() {
             form.message_body
                 .replace(/\{\{first_name\}\}/gi, 'John')
                 .replace(/\{\{last_name\}\}/gi, 'Doe')
-                .replace(/\{\{phone\}\}/gi, '2348012345678')
+                .replace(/\{\{phone\}\}/gi, mode === 'instant' ? form.phone_number || '2348012345678' : '2348012345678')
         );
-    }, [form.message_body]);
+    }, [form.message_body, form.phone_number, mode]);
 
     const toggleGroup = (id) => {
         setForm(f => ({
@@ -60,24 +67,40 @@ export default function ComposePage() {
 
     const submit = async (e) => {
         e.preventDefault();
-        if (!form.title.trim()) return toast.error('Campaign title is required');
         if (!form.message_body.trim()) return toast.error('Message body is required');
-        if (!form.group_ids.length) return toast.error('Select at least one group');
+
+        if (mode === 'campaign') {
+            if (!form.title.trim()) return toast.error('Campaign title is required');
+            if (!form.group_ids.length) return toast.error('Select at least one group');
+        } else {
+            if (!form.phone_number.trim()) return toast.error('Target phone number is required');
+        }
 
         setLoading(true);
         try {
-            const payload = {
-                title: form.title,
-                message_body: form.message_body,
-                channel: form.channel,
-                group_ids: form.group_ids,
-                scheduled_at: form.sendMode === 'schedule' && form.scheduled_at ? form.scheduled_at : undefined,
-            };
-            const { data } = await api.post('/messages/send', payload);
-            toast.success(`Campaign queued! ${data.queued} messages scheduled.`);
-            navigate('/app/analytics');
+            if (mode === 'campaign') {
+                const payload = {
+                    title: form.title,
+                    message_body: form.message_body,
+                    channel: form.channel,
+                    group_ids: form.group_ids,
+                    scheduled_at: form.sendMode === 'schedule' && form.scheduled_at ? form.scheduled_at : undefined,
+                };
+                const { data } = await api.post('/messages/send', payload);
+                toast.success(`Campaign queued! ${data.queued} messages scheduled.`);
+                navigate('/app/analytics');
+            } else {
+                const payload = {
+                    phone_number: form.phone_number,
+                    message_body: form.message_body,
+                    channel: form.channel
+                };
+                await api.post('/messages/instant', payload);
+                toast.success('Instant message sent successfully!');
+                setForm(f => ({ ...f, phone_number: '', message_body: '' }));
+            }
         } catch (err) {
-            toast.error(err.response?.data?.error || 'Failed to send campaign');
+            toast.error(err.response?.data?.error || 'Failed to send message');
         } finally {
             setLoading(false);
         }
@@ -87,8 +110,30 @@ export default function ComposePage() {
         <>
             <div className="page-header">
                 <div>
-                    <div className="page-title">Compose Campaign</div>
-                    <div className="page-subtitle">Write your message and choose your audience</div>
+                    <div className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        {mode === 'campaign' ? 'Compose Campaign' : 'Send Instant Message'}
+                        <div className="toggle-group" style={{ display: 'inline-flex', fontSize: 13, height: 32 }}>
+                            <button
+                                type="button"
+                                className={`toggle-btn ${mode === 'campaign' ? 'active' : ''}`}
+                                onClick={() => setMode('campaign')}
+                                style={{ padding: '0 12px' }}
+                            >
+                                Campaign
+                            </button>
+                            <button
+                                type="button"
+                                className={`toggle-btn ${mode === 'instant' ? 'active' : ''}`}
+                                onClick={() => setMode('instant')}
+                                style={{ padding: '0 12px' }}
+                            >
+                                Instant
+                            </button>
+                        </div>
+                    </div>
+                    <div className="page-subtitle">
+                        {mode === 'campaign' ? 'Write your message and choose your audience' : 'Send a direct message to a single number right now'}
+                    </div>
                 </div>
             </div>
 
@@ -96,16 +141,18 @@ export default function ComposePage() {
                 {/* Left: Main form */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                     {/* Campaign title */}
-                    <div className="card">
-                        <div style={{ marginBottom: 20, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <Type size={16} style={{ color: 'var(--clr-accent)' }} />
-                            Campaign Details
+                    {mode === 'campaign' && (
+                        <div className="card">
+                            <div style={{ marginBottom: 20, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Type size={16} style={{ color: 'var(--clr-accent)' }} />
+                                Campaign Details
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Campaign Title *</label>
+                                <input className="form-input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Black Friday Sale Announcement" required={mode === 'campaign'} />
+                            </div>
                         </div>
-                        <div className="form-group">
-                            <label className="form-label">Campaign Title *</label>
-                            <input className="form-input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Black Friday Sale Announcement" required />
-                        </div>
-                    </div>
+                    )}
 
                     {/* Channel toggle */}
                     <div className="card">
@@ -147,65 +194,84 @@ export default function ComposePage() {
                     </div>
 
                     {/* Schedule toggle */}
-                    <div className="card">
-                        <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 14 }}>Send Timing</div>
-                        <div className="toggle-group" style={{ marginBottom: 16 }}>
-                            <button type="button" className={`toggle-btn ${form.sendMode === 'now' ? 'active' : ''}`} onClick={() => setForm(f => ({ ...f, sendMode: 'now' }))}>
-                                ⚡ Send Now
-                            </button>
-                            <button type="button" className={`toggle-btn ${form.sendMode === 'schedule' ? 'active' : ''}`} onClick={() => setForm(f => ({ ...f, sendMode: 'schedule' }))}>
-                                🕐 Schedule
-                            </button>
-                        </div>
-                        {form.sendMode === 'schedule' && (
-                            <div className="form-group">
-                                <label className="form-label">Schedule Date &amp; Time</label>
-                                <input
-                                    className="form-input"
-                                    type="datetime-local"
-                                    value={form.scheduled_at}
-                                    onChange={e => setForm(f => ({ ...f, scheduled_at: e.target.value }))}
-                                    min={new Date().toISOString().slice(0, 16)}
-                                    required
-                                />
+                    {mode === 'campaign' && (
+                        <div className="card">
+                            <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 14 }}>Send Timing</div>
+                            <div className="toggle-group" style={{ marginBottom: 16 }}>
+                                <button type="button" className={`toggle-btn ${form.sendMode === 'now' ? 'active' : ''}`} onClick={() => setForm(f => ({ ...f, sendMode: 'now' }))}>
+                                    ⚡ Send Now
+                                </button>
+                                <button type="button" className={`toggle-btn ${form.sendMode === 'schedule' ? 'active' : ''}`} onClick={() => setForm(f => ({ ...f, sendMode: 'schedule' }))}>
+                                    🕐 Schedule
+                                </button>
                             </div>
-                        )}
-                    </div>
+                            {form.sendMode === 'schedule' && (
+                                <div className="form-group">
+                                    <label className="form-label">Schedule Date &amp; Time</label>
+                                    <input
+                                        className="form-input"
+                                        type="datetime-local"
+                                        value={form.scheduled_at}
+                                        onChange={e => setForm(f => ({ ...f, scheduled_at: e.target.value }))}
+                                        min={new Date().toISOString().slice(0, 16)}
+                                        required
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {/* Right: Audience + Preview */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                     {/* Audience */}
-                    <div className="card">
-                        <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 14 }}>Select Audience *</div>
-                        {groups.length === 0 ? (
-                            <div style={{ fontSize: 13, color: 'var(--clr-text-2)', textAlign: 'center', padding: '20px 0' }}>
-                                No groups yet. Create groups first.
+                    {mode === 'campaign' ? (
+                        <div className="card">
+                            <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 14 }}>Select Audience *</div>
+                            {groups.length === 0 ? (
+                                <div style={{ fontSize: 13, color: 'var(--clr-text-2)', textAlign: 'center', padding: '20px 0' }}>
+                                    No groups yet. Create groups first.
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    {groups.map(g => (
+                                        <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', borderRadius: 8, background: form.group_ids.includes(g.id) ? 'var(--clr-accent-dim)' : 'var(--clr-surface-2)', border: `1px solid ${form.group_ids.includes(g.id) ? 'var(--clr-accent-glow)' : 'var(--clr-border)'}`, transition: 'all 0.15s' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={form.group_ids.includes(g.id)}
+                                                onChange={() => toggleGroup(g.id)}
+                                                style={{ accentColor: 'var(--clr-accent)' }}
+                                            />
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontSize: 14, fontWeight: 500 }}>{g.name}</div>
+                                                <div style={{ fontSize: 12, color: 'var(--clr-text-3)' }}>{Number(g.contact_count).toLocaleString()} contacts</div>
+                                            </div>
+                                        </label>
+                                    ))}
+                                </div>
+                            )}
+                            {form.group_ids.length > 0 && (
+                                <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--clr-surface-2)', borderRadius: 8, fontSize: 13, color: 'var(--clr-accent)' }}>
+                                    ~{groups.filter(g => form.group_ids.includes(g.id)).reduce((a, g) => a + Number(g.contact_count), 0).toLocaleString()} recipients
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="card">
+                            <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 14 }}>Target Number *</div>
+                            <div className="form-group">
+                                <label className="form-label" style={{ display: 'block', marginBottom: '8px', fontSize: '12px' }}>Phone Number (Country Code First)</label>
+                                <input
+                                    className="form-input"
+                                    type="text"
+                                    value={form.phone_number}
+                                    onChange={e => setForm(f => ({ ...f, phone_number: e.target.value.replace(/[^0-9]/g, '') }))}
+                                    placeholder="e.g. 2348012345678"
+                                    required={mode === 'instant'}
+                                />
                             </div>
-                        ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                {groups.map(g => (
-                                    <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', borderRadius: 8, background: form.group_ids.includes(g.id) ? 'var(--clr-accent-dim)' : 'var(--clr-surface-2)', border: `1px solid ${form.group_ids.includes(g.id) ? 'var(--clr-accent-glow)' : 'var(--clr-border)'}`, transition: 'all 0.15s' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={form.group_ids.includes(g.id)}
-                                            onChange={() => toggleGroup(g.id)}
-                                            style={{ accentColor: 'var(--clr-accent)' }}
-                                        />
-                                        <div style={{ flex: 1 }}>
-                                            <div style={{ fontSize: 14, fontWeight: 500 }}>{g.name}</div>
-                                            <div style={{ fontSize: 12, color: 'var(--clr-text-3)' }}>{Number(g.contact_count).toLocaleString()} contacts</div>
-                                        </div>
-                                    </label>
-                                ))}
-                            </div>
-                        )}
-                        {form.group_ids.length > 0 && (
-                            <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--clr-surface-2)', borderRadius: 8, fontSize: 13, color: 'var(--clr-accent)' }}>
-                                ~{groups.filter(g => form.group_ids.includes(g.id)).reduce((a, g) => a + Number(g.contact_count), 0).toLocaleString()} recipients
-                            </div>
-                        )}
-                    </div>
+                        </div>
+                    )}
 
                     {/* Live Preview */}
                     {preview && (
@@ -220,7 +286,7 @@ export default function ComposePage() {
                                 color: 'var(--clr-text-2)',
                                 fontStyle: 'italic'
                             }}>
-                                "{preview}"
+                                &quot;{preview}&quot;
                             </div>
                             <div style={{ marginTop: 8, fontSize: 11, color: 'var(--clr-text-3)' }}>
                                 Shown with sample data: John Doe / 2348012345678
@@ -231,8 +297,8 @@ export default function ComposePage() {
                     {/* Send Button */}
                     <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '14px' }} disabled={loading}>
                         {loading
-                            ? <><span className="spinner" style={{ width: 16, height: 16 }} /> Queuing messages…</>
-                            : <><Send size={16} /> {form.sendMode === 'schedule' ? 'Schedule Campaign' : 'Send Campaign'}</>
+                            ? <><span className="spinner" style={{ width: 16, height: 16 }} /> {mode === 'campaign' ? 'Queuing...' : 'Sending...'}</>
+                            : <><Send size={16} /> {mode === 'instant' ? 'Send Instant Message' : form.sendMode === 'schedule' ? 'Schedule Campaign' : 'Send Campaign'}</>
                         }
                     </button>
                 </div>

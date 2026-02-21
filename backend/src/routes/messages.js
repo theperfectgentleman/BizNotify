@@ -108,6 +108,51 @@ router.post('/send', requireAuth, async (req, res) => {
     }
 });
 
+// POST /messages/instant
+router.post('/instant', requireAuth, async (req, res) => {
+    try {
+        const { phone_number, message_body, channel = 'sms' } = req.body;
+
+        if (!phone_number || !message_body) {
+            return res.status(400).json({ error: 'phone_number and message_body are required' });
+        }
+
+        const channelMap = { sms: 'generic', whatsapp: 'whatsapp' };
+        const termiiChannel = channelMap[channel] || 'generic';
+
+        const { sendSms } = require('../services/termii');
+        const result = await sendSms(phone_number, message_body, termiiChannel);
+
+        const client = await db.getClient();
+        try {
+            await client.query('BEGIN');
+            const contactQuery = await client.query('SELECT id FROM contacts WHERE phone_number = $1 OR phone_number = $2', [phone_number, '+' + phone_number.replace('+', '')]);
+            const contactId = contactQuery.rows.length > 0 ? contactQuery.rows[0].id : null;
+
+            await client.query(
+                `INSERT INTO messages (contact_id, target_phone, termii_message_id, status, error_reason)
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [contactId, phone_number, result.messageId || null, result.success ? 'sent' : 'failed', result.error || null]
+            );
+            await client.query('COMMIT');
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
+
+        if (result.success) {
+            return res.status(200).json({ message: 'Message sent successfully', messageId: result.messageId });
+        } else {
+            return res.status(400).json({ error: result.error });
+        }
+    } catch (err) {
+        console.error('[messages/instant]', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 // GET /messages/stats
 router.get('/stats', requireAuth, async (req, res) => {
     try {
@@ -152,16 +197,16 @@ router.get('/logs', requireAuth, async (req, res) => {
         }
         if (search) {
             params.push(`%${search}%`);
-            where += ` AND (c.phone_number ILIKE $${params.length} OR c.first_name ILIKE $${params.length} OR c.last_name ILIKE $${params.length})`;
+            where += ` AND (c.phone_number ILIKE $${params.length} OR m.target_phone ILIKE $${params.length} OR c.first_name ILIKE $${params.length} OR c.last_name ILIKE $${params.length})`;
         }
 
         params.push(Number(limit), offset);
 
         const { rows } = await db.query(
-            `SELECT m.*, c.phone_number, c.first_name, c.last_name, cp.title AS campaign_title
+            `SELECT m.*, COALESCE(c.phone_number, m.target_phone) AS phone_number, c.first_name, c.last_name, cp.title AS campaign_title
        FROM messages m
-       JOIN contacts c ON c.id = m.contact_id
-       JOIN campaigns cp ON cp.id = m.campaign_id
+       LEFT JOIN contacts c ON c.id = m.contact_id
+       LEFT JOIN campaigns cp ON cp.id = m.campaign_id
        ${where}
        ORDER BY m.updated_at DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,

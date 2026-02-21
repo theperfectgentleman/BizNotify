@@ -56,8 +56,9 @@ CREATE TABLE IF NOT EXISTS campaigns (
 -- Messages (individual send tracking)
 CREATE TABLE IF NOT EXISTS messages (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  campaign_id       UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-  contact_id        UUID NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  campaign_id       UUID REFERENCES campaigns(id) ON DELETE CASCADE,
+  contact_id        UUID REFERENCES contacts(id) ON DELETE CASCADE,
+  target_phone      TEXT,
   termii_message_id TEXT,
   status            TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','sent','delivered','failed','expired')),
   error_reason      TEXT,
