@@ -78,12 +78,12 @@ export default function Sidebar() {
 
             <div className="sidebar-footer" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {balance && (
-                    <div style={{ background: 'var(--clr-surface-2)', border: '1px solid var(--clr-border)', borderRadius: '12px', padding: '16px', borderLeft: '4px solid var(--clr-accent)' }}>
-                        <div style={{ background: 'var(--clr-accent-dim)', display: 'inline-flex', padding: 8, borderRadius: 8, marginBottom: 12 }}>
-                            <Wallet size={16} color="var(--clr-accent)" />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--clr-surface-2)', borderRadius: 8, border: '1px solid var(--clr-border)' }}>
+                        <Wallet size={16} color="var(--clr-accent)" />
+                        <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--clr-text)' }}>{balance.currency} {balance.balance}</div>
+                            <div style={{ fontSize: 11, color: 'var(--clr-text-3)', marginTop: 2 }}>Termii Balance</div>
                         </div>
-                        <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 2 }}>{balance.currency} {balance.balance}</div>
-                        <div style={{ fontSize: 13, color: 'var(--clr-text-3)' }}>Termii Balance</div>
                     </div>
                 )}
 
