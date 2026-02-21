@@ -162,4 +162,43 @@ async function requestSenderId(sender_id, usecase, company) {
     }
 }
 
-module.exports = { sendSms, sendBulkSms, getBalance, fetchSenderIds, requestSenderId };
+/**
+ * Fetch Message History from Termii Inbox.
+ */
+async function fetchHistory() {
+    try {
+        const res = await fetch(`${baseUrl}/api/sms/inbox?api_key=${apiKey}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+            return { success: false, error: data.message || 'Failed to fetch history' };
+        }
+
+        return { success: true, data };
+    } catch (error) {
+        console.error('[Termii] fetchHistory failed:', error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * Verify phone number and check DND status.
+ * @param {string} phone_number - Phone number to check
+ */
+async function checkDnd(phone_number) {
+    try {
+        const res = await fetch(`${baseUrl}/api/check/dnd?api_key=${apiKey}&phone_number=${phone_number}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+            return { success: false, error: data.message || 'Failed to check DND status' };
+        }
+
+        return { success: true, data };
+    } catch (error) {
+        console.error('[Termii] checkDnd failed:', error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+module.exports = { sendSms, sendBulkSms, getBalance, fetchSenderIds, requestSenderId, fetchHistory, checkDnd };

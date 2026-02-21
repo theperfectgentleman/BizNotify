@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
-import { BarChart2, CheckCircle2, XCircle, Send, Clock } from 'lucide-react';
+import { BarChart2, CheckCircle2, XCircle, Send, Clock, Inbox } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
@@ -36,15 +36,18 @@ const CustomTooltip = ({ active, payload, label }) => {
 export default function AnalyticsPage() {
     const [campaigns, setCampaigns] = useState([]);
     const [stats, setStats] = useState(null);
+    const [inbox, setInbox] = useState([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         Promise.all([
             api.get('/messages/campaigns'),
             api.get('/messages/stats'),
-        ]).then(([c, s]) => {
+            api.get('/termii/history').catch(() => ({ data: [] }))
+        ]).then(([c, s, h]) => {
             setCampaigns(c.data);
             setStats(s.data);
+            setInbox(Array.isArray(h.data) ? h.data.slice(0, 15) : []);
         }).finally(() => setLoading(false));
     }, []);
 
@@ -161,6 +164,51 @@ export default function AnalyticsPage() {
                                         </tr>
                                     );
                                 })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            {/* Termii Network Inbox History */}
+            <div className="card" style={{ marginTop: 24 }}>
+                <div style={{ fontWeight: 600, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Inbox size={18} style={{ color: 'var(--clr-accent)' }} />
+                    Recent Network History (Termii Inbox)
+                </div>
+
+                {inbox.length === 0 ? (
+                    <div className="empty-state">
+                        <div className="empty-icon"><Inbox size={28} /></div>
+                        <div className="empty-title">No network history</div>
+                        <div className="empty-desc">No recent messages found in your Termii inbox.</div>
+                    </div>
+                ) : (
+                    <div className="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Receiver</th>
+                                    <th>Sender</th>
+                                    <th>Message ID</th>
+                                    <th>Channel</th>
+                                    <th>Status</th>
+                                    <th>Sent Via</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {inbox.map((msg, idx) => (
+                                    <tr key={idx}>
+                                        <td style={{ fontWeight: 500 }}>{msg.receiver}</td>
+                                        <td>{msg.sender || '—'}</td>
+                                        <td style={{ fontFamily: 'monospace', fontSize: 13, color: 'var(--clr-text-3)' }}>{msg.message_id}</td>
+                                        <td><span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--clr-text-3)' }}>{msg.sms_type}</span></td>
+                                        <td><StatusBadge status={msg.status} /></td>
+                                        <td><span className="badge" style={{ background: 'var(--clr-surface-3)', color: 'var(--clr-text-2)' }}>{msg.send_by}</span></td>
+                                        <td style={{ fontSize: 13 }}>{new Date(msg.created_at).toLocaleString()}</td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
                     </div>

@@ -57,7 +57,9 @@ export default function App() {
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="contacts" element={<ContactsPage />} />
               <Route path="groups" element={<GroupsPage />} />
-              <Route path="compose" element={<ComposePage />} />
+              <Route path="compose" element={<Navigate to="/app/compose/campaign" replace />} />
+              <Route path="compose/campaign" element={<ComposePage />} />
+              <Route path="compose/instant" element={<ComposePage />} />
               <Route path="analytics" element={<AnalyticsPage />} />
               <Route path="sender-ids" element={<SenderIdPage />} />
               <Route path="users" element={<UsersPage />} />

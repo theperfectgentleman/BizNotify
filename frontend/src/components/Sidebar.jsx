@@ -1,15 +1,18 @@
+import { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import api from '../services/api';
 import {
-    LayoutDashboard, Users, FolderOpen, Send, BarChart2, LogOut, Zap, ShieldCheck, Sun, Moon, Link
+    LayoutDashboard, Users, FolderOpen, Send, BarChart2, LogOut, Zap, ShieldCheck, Sun, Moon, Link, Wallet
 } from 'lucide-react';
 
 const navItems = [
     { to: '/app/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/app/contacts', icon: Users, label: 'Contacts' },
     { to: '/app/groups', icon: FolderOpen, label: 'Groups' },
-    { to: '/app/compose', icon: Send, label: 'Compose' },
+    { to: '/app/compose/campaign', icon: Send, label: 'Campaigns' },
+    { to: '/app/compose/instant', icon: Zap, label: 'Instant Message' },
     { to: '/app/analytics', icon: BarChart2, label: 'Analytics' },
     { to: '/app/sender-ids', icon: Link, label: 'Sender IDs' },
 ];
@@ -18,6 +21,17 @@ export default function Sidebar() {
     const { user, logout } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const navigate = useNavigate();
+    const [balance, setBalance] = useState(null);
+
+    useEffect(() => {
+        api.get('/termii/balance')
+            .then(res => {
+                if (res.data?.success) {
+                    setBalance(res.data);
+                }
+            })
+            .catch(() => { });
+    }, []);
 
     const handleLogout = () => {
         logout();
@@ -62,21 +76,31 @@ export default function Sidebar() {
                 )}
             </nav>
 
-            <div className="sidebar-footer" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <button
-                    onClick={toggleTheme}
-                    className="btn btn-secondary btn-sm"
-                    style={{ justifyContent: 'center', width: '100%', padding: '8px 0' }}
-                >
-                    {theme === 'light' ? <Moon size={14} /> : <Sun size={14} />}
-                    <span style={{ marginLeft: 8 }}>{theme === 'light' ? 'Dark Mode' : 'Light Mode'}</span>
-                </button>
+            <div className="sidebar-footer" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {balance && (
+                    <div style={{ background: 'var(--clr-surface-2)', border: '1px solid var(--clr-border)', borderRadius: '12px', padding: '16px', borderLeft: '4px solid var(--clr-accent)' }}>
+                        <div style={{ background: 'var(--clr-accent-dim)', display: 'inline-flex', padding: 8, borderRadius: 8, marginBottom: 12 }}>
+                            <Wallet size={16} color="var(--clr-accent)" />
+                        </div>
+                        <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 2 }}>{balance.currency} {balance.balance}</div>
+                        <div style={{ fontSize: 13, color: 'var(--clr-text-3)' }}>Termii Balance</div>
+                    </div>
+                )}
+
                 <div className="user-pill">
                     <div className="user-avatar">{initials}</div>
                     <div className="user-info">
                         <div className="user-email">{user?.email}</div>
                         <div className="user-role">{user?.role}</div>
                     </div>
+                    <button
+                        onClick={toggleTheme}
+                        className="btn btn-ghost btn-icon"
+                        title="Toggle theme"
+                        style={{ marginRight: 2 }}
+                    >
+                        {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
+                    </button>
                     <button
                         onClick={handleLogout}
                         className="btn btn-ghost btn-icon"

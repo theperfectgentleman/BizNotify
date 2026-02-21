@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { Send, MessageSquare, Type } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import PropTypes from 'prop-types';
 
 const MAX_SMS_CHARS = 160;
@@ -25,6 +25,9 @@ CharCounter.propTypes = {
 
 export default function ComposePage() {
     const navigate = useNavigate();
+    const location = useLocation();
+    const mode = location.pathname.includes('/instant') ? 'instant' : 'campaign';
+
     const [groups, setGroups] = useState([]);
     const [senderIds, setSenderIds] = useState([]);
 
@@ -39,7 +42,6 @@ export default function ComposePage() {
         sendMode: 'now',
         scheduled_at: '',
     });
-    const [mode, setMode] = useState('campaign'); // 'campaign' or 'instant'
     const [loading, setLoading] = useState(false);
     const [preview, setPreview] = useState('');
 
@@ -130,24 +132,6 @@ export default function ComposePage() {
                 <div>
                     <div className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         {mode === 'campaign' ? 'Compose Campaign' : 'Send Instant Message'}
-                        <div className="toggle-group" style={{ display: 'inline-flex', fontSize: 13, height: 32 }}>
-                            <button
-                                type="button"
-                                className={`toggle-btn ${mode === 'campaign' ? 'active' : ''}`}
-                                onClick={() => setMode('campaign')}
-                                style={{ padding: '0 12px' }}
-                            >
-                                Campaign
-                            </button>
-                            <button
-                                type="button"
-                                className={`toggle-btn ${mode === 'instant' ? 'active' : ''}`}
-                                onClick={() => setMode('instant')}
-                                style={{ padding: '0 12px' }}
-                            >
-                                Instant
-                            </button>
-                        </div>
                     </div>
                     <div className="page-subtitle">
                         {mode === 'campaign' ? 'Write your message and choose your audience' : 'Send a direct message to a single number right now'}

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
-import { Send, Users, MessageSquare, CheckCircle2, XCircle, Wallet, TrendingUp, Clock } from 'lucide-react';
+import { Send, Users, MessageSquare, CheckCircle2, XCircle, Wallet, TrendingUp, Clock, Search, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 
 function StatCard({ icon, label, value, color, sub }) {
     return (
@@ -21,6 +22,12 @@ function StatusBadge({ status }) {
 export default function DashboardPage() {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
+
+    // Lookup State
+    const [lookupPhone, setLookupPhone] = useState('');
+    const [lookupResult, setLookupResult] = useState(null);
+    const [lookupLoading, setLookupLoading] = useState(false);
+
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -29,6 +36,21 @@ export default function DashboardPage() {
             .catch(() => { })
             .finally(() => setLoading(false));
     }, []);
+
+    const handleLookup = async (e) => {
+        e.preventDefault();
+        if (!lookupPhone) return toast.error('Enter a phone number');
+        setLookupLoading(true);
+        setLookupResult(null);
+        try {
+            const { data } = await api.get(`/termii/check-dnd?phone_number=${lookupPhone}`);
+            setLookupResult(data);
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Failed to verify number');
+        } finally {
+            setLookupLoading(false);
+        }
+    };
 
     if (loading) return (
         <div className="loading-center">
@@ -152,6 +174,56 @@ export default function DashboardPage() {
                                 })}
                             </tbody>
                         </table>
+                    </div>
+                )}
+            </div>
+
+            {/* Quick Tools */}
+            <div className="card" style={{ marginTop: 24 }}>
+                <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16 }}>Quick Number Verification</div>
+                <div style={{ color: 'var(--clr-text-2)', fontSize: 13, marginBottom: 16, maxWidth: 500 }}>
+                    Verify a phone number and automatically detect its DND status and current network.
+                </div>
+
+                <form onSubmit={handleLookup} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', maxWidth: 400 }}>
+                    <div style={{ flex: 1 }}>
+                        <input
+                            type="text"
+                            className="form-input"
+                            placeholder="e.g 2348012345678"
+                            value={lookupPhone}
+                            onChange={(e) => setLookupPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                        />
+                    </div>
+                    <button type="submit" className="btn btn-secondary" disabled={lookupLoading}>
+                        {lookupLoading ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <Search size={14} />}
+                        {lookupLoading ? 'Verifying...' : 'Verify'}
+                    </button>
+                </form>
+
+                {lookupResult && (
+                    <div style={{ marginTop: 16, padding: '16px', borderRadius: 8, background: 'var(--clr-surface-2)', border: '1px solid var(--clr-border)', display: 'inline-block', minWidth: 280 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                            {lookupResult.status === 'success' && lookupResult.dnd_active === false ? (
+                                <ShieldCheck size={20} color="var(--clr-green)" />
+                            ) : (
+                                <ShieldAlert size={20} color="var(--clr-amber)" />
+                            )}
+                            <div style={{ fontWeight: 600, fontSize: 15 }}>{lookupResult.number}</div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '8px 12px', fontSize: 13 }}>
+                            <div style={{ color: 'var(--clr-text-3)' }}>Network:</div>
+                            <div style={{ fontWeight: 500, textTransform: 'capitalize' }}>{lookupResult.network || 'Unknown'}</div>
+
+                            <div style={{ color: 'var(--clr-text-3)' }}>DND Active:</div>
+                            <div style={{ fontWeight: 500, color: lookupResult.dnd_active ? 'var(--clr-amber)' : 'var(--clr-green)' }}>
+                                {lookupResult.dnd_active ? 'Yes' : 'No'}
+                            </div>
+
+                            <div style={{ color: 'var(--clr-text-3)' }}>Status:</div>
+                            <div><StatusBadge status={lookupResult.status === 'success' ? 'delivered' : 'failed'} /></div>
+                        </div>
                     </div>
                 )}
             </div>
