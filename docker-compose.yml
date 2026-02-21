@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
 
   # ── Backend API ───────────────────────────────────────────────────
@@ -12,7 +10,6 @@ services:
     environment:
       NODE_ENV:      production
       PORT:          5000
-      # Paste your external DB connection string in Dokploy's Environment tab
       DATABASE_URL:  ${DATABASE_URL:?DATABASE_URL must be set}
       JWT_SECRET:    ${JWT_SECRET:?JWT_SECRET must be set}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
@@ -22,7 +19,6 @@ services:
       DEFAULT_ADMIN_EMAIL:    ${DEFAULT_ADMIN_EMAIL:-admin@biznotify.com}
       DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-admin1234}
       FRONTEND_URL: ${FRONTEND_URL:-*}
-      # Schema already applied — skip auto-migration on startup
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-false}
     expose:
       - "5000"
@@ -30,6 +26,8 @@ services:
       - biznotify_net
 
   # ── Frontend (Nginx + React SPA) ──────────────────────────────────
+  # Do NOT use `ports` — Dokploy's Traefik already owns 80/443.
+  # Just expose internally; the Domain config in Dokploy routes to this container.
   frontend:
     build:
       context: ./frontend
@@ -38,8 +36,8 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
-    ports:
-      - "80:80"
+    expose:
+      - "80"
     networks:
       - biznotify_net
 
