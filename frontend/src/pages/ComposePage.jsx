@@ -26,12 +26,16 @@ CharCounter.propTypes = {
 export default function ComposePage() {
     const navigate = useNavigate();
     const [groups, setGroups] = useState([]);
+    const [senderIds, setSenderIds] = useState([]);
+
     const [form, setForm] = useState({
         title: '',
         message_body: '',
-        channel: 'sms',
+        channel: 'generic', // generic, dnd, whatsapp
+        message_type: 'plain', // plain, unicode
+        sender_id: '',
         group_ids: [],
-        phone_number: '',
+        target_phones: '',
         sendMode: 'now',
         scheduled_at: '',
     });
@@ -41,6 +45,16 @@ export default function ComposePage() {
 
     useEffect(() => {
         api.get('/groups').then(r => setGroups(r.data));
+        api.get('/termii/sender-ids').then(r => {
+            const list = r.data?.content || r.data || [];
+            if (Array.isArray(list)) {
+                const actives = list.filter(s => s.status?.toLowerCase() === 'active' || s.status?.toLowerCase() === 'unblock');
+                setSenderIds(actives);
+                if (actives.length > 0) {
+                    setForm(f => ({ ...f, sender_id: actives[0].sender_id }));
+                }
+            }
+        }).catch(err => console.error('Failed to fetch sender IDs:', err));
     }, []);
 
     useEffect(() => {
@@ -48,9 +62,9 @@ export default function ComposePage() {
             form.message_body
                 .replace(/\{\{first_name\}\}/gi, 'John')
                 .replace(/\{\{last_name\}\}/gi, 'Doe')
-                .replace(/\{\{phone\}\}/gi, mode === 'instant' ? form.phone_number || '2348012345678' : '2348012345678')
+                .replace(/\{\{phone\}\}/gi, mode === 'instant' ? (form.target_phones.split(/[,\s]+/)[0] || '2348012345678') : '2348012345678')
         );
-    }, [form.message_body, form.phone_number, mode]);
+    }, [form.message_body, form.target_phones, mode]);
 
     const toggleGroup = (id) => {
         setForm(f => ({
@@ -73,7 +87,7 @@ export default function ComposePage() {
             if (!form.title.trim()) return toast.error('Campaign title is required');
             if (!form.group_ids.length) return toast.error('Select at least one group');
         } else {
-            if (!form.phone_number.trim()) return toast.error('Target phone number is required');
+            if (!form.target_phones.trim()) return toast.error('Target phone numbers are required');
         }
 
         setLoading(true);
@@ -83,6 +97,8 @@ export default function ComposePage() {
                     title: form.title,
                     message_body: form.message_body,
                     channel: form.channel,
+                    sender_id: form.sender_id || undefined,
+                    message_type: form.message_type,
                     group_ids: form.group_ids,
                     scheduled_at: form.sendMode === 'schedule' && form.scheduled_at ? form.scheduled_at : undefined,
                 };
@@ -91,13 +107,15 @@ export default function ComposePage() {
                 navigate('/app/analytics');
             } else {
                 const payload = {
-                    phone_number: form.phone_number,
+                    target_phones: form.target_phones,
                     message_body: form.message_body,
-                    channel: form.channel
+                    channel: form.channel,
+                    sender_id: form.sender_id || undefined,
+                    message_type: form.message_type
                 };
-                await api.post('/messages/instant', payload);
-                toast.success('Instant message sent successfully!');
-                setForm(f => ({ ...f, phone_number: '', message_body: '' }));
+                const { data } = await api.post('/messages/instant', payload);
+                toast.success(`Sent successfully to ${data.count || 1} contact(s)!`);
+                setForm(f => ({ ...f, target_phones: '', message_body: '' }));
             }
         } catch (err) {
             toast.error(err.response?.data?.error || 'Failed to send message');
@@ -154,16 +172,26 @@ export default function ComposePage() {
                         </div>
                     )}
 
-                    {/* Channel toggle */}
                     <div className="card">
-                        <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 14 }}>Channel</div>
-                        <div className="toggle-group">
-                            <button type="button" className={`toggle-btn ${form.channel === 'sms' ? 'active' : ''}`} onClick={() => setForm(f => ({ ...f, channel: 'sms' }))}>
-                                📱 SMS
-                            </button>
-                            <button type="button" className={`toggle-btn ${form.channel === 'whatsapp' ? 'active' : ''}`} onClick={() => setForm(f => ({ ...f, channel: 'whatsapp' }))}>
-                                💬 WhatsApp
-                            </button>
+                        <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 14 }}>Settings</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                            <div className="form-group">
+                                <label className="form-label">Gateway Route</label>
+                                <select className="form-input" value={form.channel} onChange={e => setForm(f => ({ ...f, channel: e.target.value }))}>
+                                    <option value="generic">SMS (Generic/Promotional)</option>
+                                    <option value="dnd">SMS (DND/Transactional)</option>
+                                    <option value="whatsapp">WhatsApp</option>
+                                </select>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Sender ID / Mask</label>
+                                <select className="form-input" value={form.sender_id} onChange={e => setForm(f => ({ ...f, sender_id: e.target.value }))}>
+                                    <option value="">-- Use Default --</option>
+                                    {senderIds.map((s, idx) => (
+                                        <option key={idx} value={s.sender_id}>{s.sender_id}</option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
                     </div>
 
@@ -191,6 +219,16 @@ export default function ComposePage() {
                             required
                         />
                         <CharCounter text={form.message_body} />
+
+                        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 16 }}>
+                            <label className="form-label" style={{ marginBottom: 0 }}>Message Type:</label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, cursor: 'pointer' }}>
+                                <input type="radio" value="plain" checked={form.message_type === 'plain'} onChange={e => setForm(f => ({ ...f, message_type: e.target.value }))} style={{ accentColor: 'var(--clr-accent)' }} /> Plain
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, cursor: 'pointer' }}>
+                                <input type="radio" value="unicode" checked={form.message_type === 'unicode'} onChange={e => setForm(f => ({ ...f, message_type: e.target.value }))} style={{ accentColor: 'var(--clr-accent)' }} /> Unicode
+                            </label>
+                        </div>
                     </div>
 
                     {/* Schedule toggle */}
@@ -258,17 +296,20 @@ export default function ComposePage() {
                         </div>
                     ) : (
                         <div className="card">
-                            <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 14 }}>Target Number *</div>
+                            <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 14 }}>Target Numbers *</div>
                             <div className="form-group">
-                                <label className="form-label" style={{ display: 'block', marginBottom: '8px', fontSize: '12px' }}>Phone Number (Country Code First)</label>
-                                <input
-                                    className="form-input"
-                                    type="text"
-                                    value={form.phone_number}
-                                    onChange={e => setForm(f => ({ ...f, phone_number: e.target.value.replace(/[^0-9]/g, '') }))}
-                                    placeholder="e.g. 2348012345678"
+                                <label className="form-label" style={{ display: 'block', marginBottom: '8px', fontSize: '12px' }}>Comma separated or new line isolated</label>
+                                <textarea
+                                    className="form-textarea"
+                                    style={{ fontFamily: 'monospace', minHeight: '120px' }}
+                                    value={form.target_phones}
+                                    onChange={e => setForm(f => ({ ...f, target_phones: e.target.value.replace(/[^0-9,\n\s]/g, '') }))}
+                                    placeholder="e.g. 2348012345678, 2349012345678"
                                     required={mode === 'instant'}
                                 />
+                                <div style={{ fontSize: 11, color: 'var(--clr-text-3)', marginTop: 8 }}>
+                                    Found ~{form.target_phones.split(/[,\s]+/).filter(Boolean).length} valid numbers
+                                </div>
                             </div>
                         </div>
                     )}

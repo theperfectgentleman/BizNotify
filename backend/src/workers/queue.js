@@ -29,12 +29,12 @@ async function initQueue() {
 }
 
 async function processMessage(job) {
-    const { messageId, phone, messageBody, channel } = job.data;
+    const { messageId, phone, messageBody, channel, customSender, msgType } = job.data;
 
-    const channelMap = { sms: 'generic', whatsapp: 'whatsapp' };
+    const channelMap = { sms: 'generic', whatsapp: 'whatsapp', generic: 'generic', dnd: 'dnd' };
     const termiiChannel = channelMap[channel] || 'generic';
 
-    const result = await sendSms(phone, messageBody, termiiChannel);
+    const result = await sendSms(phone, messageBody, termiiChannel, customSender, msgType);
 
     if (result.success) {
         await db.query(

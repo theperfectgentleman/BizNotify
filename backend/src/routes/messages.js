@@ -6,7 +6,7 @@ const { enqueueCampaignJobs } = require('../workers/queue');
 // POST /messages/send
 router.post('/send', requireAuth, async (req, res) => {
     try {
-        const { title, message_body, channel = 'sms', group_ids, contact_ids, scheduled_at } = req.body;
+        const { title, message_body, channel = 'generic', sender_id = null, message_type = 'plain', group_ids, contact_ids, scheduled_at } = req.body;
 
         if (!title || !message_body) {
             return res.status(400).json({ error: 'title and message_body are required' });
@@ -85,6 +85,8 @@ router.post('/send', requireAuth, async (req, res) => {
                     phone: c.phone_number,
                     messageBody: personalizedBody,
                     channel,
+                    customSender: sender_id,
+                    msgType: message_type,
                 };
             });
 
@@ -111,29 +113,42 @@ router.post('/send', requireAuth, async (req, res) => {
 // POST /messages/instant
 router.post('/instant', requireAuth, async (req, res) => {
     try {
-        const { phone_number, message_body, channel = 'sms' } = req.body;
+        const { target_phones, message_body, channel = 'generic', sender_id = null, message_type = 'plain' } = req.body;
 
-        if (!phone_number || !message_body) {
-            return res.status(400).json({ error: 'phone_number and message_body are required' });
+        if (!target_phones || !message_body) {
+            return res.status(400).json({ error: 'target_phones and message_body are required' });
         }
 
-        const channelMap = { sms: 'generic', whatsapp: 'whatsapp' };
+        const rawPhones = target_phones.split(/[\s,;]+/).filter(Boolean);
+        const phones = [...new Set(rawPhones)]; // Remove duplicate entries
+        if (phones.length === 0) return res.status(400).json({ error: 'No valid phone numbers provided' });
+
+        const channelMap = { sms: 'generic', whatsapp: 'whatsapp', generic: 'generic', dnd: 'dnd' };
         const termiiChannel = channelMap[channel] || 'generic';
 
-        const { sendSms } = require('../services/termii');
-        const result = await sendSms(phone_number, message_body, termiiChannel);
+        const { sendSms, sendBulkSms } = require('../services/termii');
+
+        let result;
+        if (phones.length === 1) {
+            result = await sendSms(phones[0], message_body, termiiChannel, sender_id, message_type);
+        } else {
+            result = await sendBulkSms(phones, message_body, termiiChannel, sender_id, message_type);
+        }
 
         const client = await db.getClient();
         try {
             await client.query('BEGIN');
-            const contactQuery = await client.query('SELECT id FROM contacts WHERE phone_number = $1 OR phone_number = $2', [phone_number, '+' + phone_number.replace('+', '')]);
-            const contactId = contactQuery.rows.length > 0 ? contactQuery.rows[0].id : null;
 
-            await client.query(
-                `INSERT INTO messages (contact_id, target_phone, termii_message_id, status, error_reason)
-                 VALUES ($1, $2, $3, $4, $5)`,
-                [contactId, phone_number, result.messageId || null, result.success ? 'sent' : 'failed', result.error || null]
+            // For ad-hoc bulk messages, just store the target_phone
+            // We can optionally link contact_ids later if they exist in DB
+            const inserts = phones.map((p) =>
+                client.query(
+                    `INSERT INTO messages (target_phone, termii_message_id, status, error_reason)
+                     VALUES ($1, $2, $3, $4)`,
+                    [p, result.messageId || null, result.success ? 'sent' : 'failed', result.error || null]
+                )
             );
+            await Promise.all(inserts);
             await client.query('COMMIT');
         } catch (err) {
             await client.query('ROLLBACK');
@@ -143,7 +158,7 @@ router.post('/instant', requireAuth, async (req, res) => {
         }
 
         if (result.success) {
-            return res.status(200).json({ message: 'Message sent successfully', messageId: result.messageId });
+            return res.status(200).json({ message: 'Message sent successfully', messageId: result.messageId, count: phones.length });
         } else {
             return res.status(400).json({ error: result.error });
         }

@@ -14,12 +14,12 @@ const baseUrl = process.env.TERMII_BASEURL || 'https://v3.api.termii.com';
  * @param {string} channel - 'generic' | 'whatsapp'
  * @returns {{ success: boolean, messageId?: string, error?: string }}
  */
-async function sendSms(to, message, channel = 'generic') {
+async function sendSms(to, message, channel = 'generic', customSender = null, msgType = 'plain') {
     const payload = {
         to,
-        from: senderId,
+        from: customSender || senderId,
         sms: message,
-        type: 'plain',
+        type: msgType,
         channel,
         api_key: apiKey
     };
@@ -53,12 +53,12 @@ async function sendSms(to, message, channel = 'generic') {
  * @param {string} message - Message body
  * @param {string} channel - 'generic' | 'whatsapp'
  */
-async function sendBulkSms(toArray, message, channel = 'generic') {
+async function sendBulkSms(toArray, message, channel = 'generic', customSender = null, msgType = 'plain') {
     const payload = {
         to: toArray,
-        from: senderId,
+        from: customSender || senderId,
         sms: message,
-        type: 'plain',
+        type: msgType,
         channel,
         api_key: apiKey
     };
