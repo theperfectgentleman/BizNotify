@@ -15,6 +15,7 @@ const messageRoutes = require('./src/routes/messages');
 const webhookRoutes = require('./src/routes/webhooks');
 const dashboardRoutes = require('./src/routes/dashboard');
 const userRoutes = require('./src/routes/users');
+const termiiRoutes = require('./src/routes/termii');
 
 const app = express();
 
@@ -45,6 +46,7 @@ app.use('/api/contacts', contactRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/termii', termiiRoutes);
 
 // 404 handler
 app.use((req, res) => {

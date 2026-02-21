@@ -14,6 +14,7 @@ import GroupsPage from './pages/GroupsPage';
 import ComposePage from './pages/ComposePage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import UsersPage from './pages/UsersPage';
+import SenderIdPage from './pages/SenderIdPage';
 
 export default function App() {
   return (
@@ -58,6 +59,7 @@ export default function App() {
               <Route path="groups" element={<GroupsPage />} />
               <Route path="compose" element={<ComposePage />} />
               <Route path="analytics" element={<AnalyticsPage />} />
+              <Route path="sender-ids" element={<SenderIdPage />} />
               <Route path="users" element={<UsersPage />} />
             </Route>
 

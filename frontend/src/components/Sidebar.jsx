@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import {
-    LayoutDashboard, Users, FolderOpen, Send, BarChart2, LogOut, Zap, ShieldCheck, Sun, Moon
+    LayoutDashboard, Users, FolderOpen, Send, BarChart2, LogOut, Zap, ShieldCheck, Sun, Moon, Link
 } from 'lucide-react';
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
     { to: '/app/groups', icon: FolderOpen, label: 'Groups' },
     { to: '/app/compose', icon: Send, label: 'Compose' },
     { to: '/app/analytics', icon: BarChart2, label: 'Analytics' },
+    { to: '/app/sender-ids', icon: Link, label: 'Sender IDs' },
 ];
 
 export default function Sidebar() {
