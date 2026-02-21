@@ -1,0 +1,171 @@
+import { useState, useEffect } from 'react';
+import api from '../services/api';
+import { BarChart2, CheckCircle2, XCircle, Send, Clock } from 'lucide-react';
+import {
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
+} from 'recharts';
+
+function StatusBadge({ status }) {
+    return <span className={`badge badge-${status}`}>{status}</span>;
+}
+
+const STATUS_COLORS = {
+    delivered: '#10b981',
+    sent: '#3b82f6',
+    failed: '#ef4444',
+    queued: '#f59e0b',
+};
+
+const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload?.length) {
+        return (
+            <div style={{ background: 'var(--clr-surface-2)', border: '1px solid var(--clr-border)', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
+                {payload.map(p => (
+                    <div key={p.name} style={{ color: p.fill, display: 'flex', gap: 8 }}>
+                        <span>{p.name}:</span>
+                        <span style={{ fontWeight: 600 }}>{p.value.toLocaleString()}</span>
+                    </div>
+                ))}
+            </div>
+        );
+    }
+    return null;
+};
+
+export default function AnalyticsPage() {
+    const [campaigns, setCampaigns] = useState([]);
+    const [stats, setStats] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        Promise.all([
+            api.get('/messages/campaigns'),
+            api.get('/messages/stats'),
+        ]).then(([c, s]) => {
+            setCampaigns(c.data);
+            setStats(s.data);
+        }).finally(() => setLoading(false));
+    }, []);
+
+    if (loading) return <div className="loading-center"><span className="spinner spinner-lg" /></div>;
+
+    // Chart data
+    const chartData = campaigns.slice(0, 10).map(c => ({
+        name: c.title.length > 18 ? c.title.slice(0, 18) + '…' : c.title,
+        Delivered: parseInt(c.delivered) || 0,
+        Failed: parseInt(c.failed) || 0,
+        Sent: parseInt(c.sent) || 0,
+    })).reverse();
+
+    return (
+        <>
+            <div className="page-header">
+                <div>
+                    <div className="page-title">Analytics</div>
+                    <div className="page-subtitle">Campaign performance and delivery breakdown</div>
+                </div>
+            </div>
+
+            {/* Overall Stats */}
+            <div className="stats-grid" style={{ marginBottom: 28 }}>
+                {[
+                    { icon: <Send size={20} />, label: 'Total Messages', value: Number(stats?.total || 0).toLocaleString(), color: 'teal' },
+                    { icon: <CheckCircle2 size={20} />, label: 'Delivered', value: Number(stats?.delivered || 0).toLocaleString(), color: 'green' },
+                    { icon: <XCircle size={20} />, label: 'Failed', value: Number(stats?.failed || 0).toLocaleString(), color: 'red' },
+                    { icon: <Clock size={20} />, label: 'In Queue', value: Number(stats?.queued || 0).toLocaleString(), color: 'amber' },
+                    { icon: <BarChart2 size={20} />, label: 'Total Campaigns', value: Number(stats?.total_campaigns || 0).toLocaleString(), color: 'blue' },
+                ].map(s => (
+                    <div key={s.label} className={`stat-card ${s.color}`}>
+                        <div className={`stat-icon ${s.color}`}>{s.icon}</div>
+                        <div className="stat-value">{s.value}</div>
+                        <div className="stat-label">{s.label}</div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Bar Chart */}
+            {chartData.length > 0 && (
+                <div className="card mb-6">
+                    <div style={{ fontWeight: 600, marginBottom: 24 }}>Campaign Performance (Last 10)</div>
+                    <ResponsiveContainer width="100%" height={260}>
+                        <BarChart data={chartData} barSize={18} barGap={4}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                            <XAxis dataKey="name" tick={{ fill: '#4b5563', fontSize: 12 }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fill: '#4b5563', fontSize: 12 }} axisLine={false} tickLine={false} />
+                            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+                            <Bar dataKey="Delivered" fill="#10b981" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="Failed" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            )}
+
+            {/* Campaign Table */}
+            <div className="card">
+                <div style={{ fontWeight: 600, marginBottom: 20 }}>All Campaigns</div>
+
+                {campaigns.length === 0 ? (
+                    <div className="empty-state">
+                        <div className="empty-icon"><BarChart2 size={28} /></div>
+                        <div className="empty-title">No campaigns yet</div>
+                        <div className="empty-desc">Your campaign history will appear here once you send your first campaign.</div>
+                    </div>
+                ) : (
+                    <div className="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Campaign</th>
+                                    <th>Channel</th>
+                                    <th>Status</th>
+                                    <th>Total</th>
+                                    <th>Delivered</th>
+                                    <th>Failed</th>
+                                    <th>Delivery Rate</th>
+                                    <th>Created</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {campaigns.map((c) => {
+                                    const total = parseInt(c.total_messages) || 0;
+                                    const delivered = parseInt(c.delivered) || 0;
+                                    const failed = parseInt(c.failed) || 0;
+                                    const rate = total > 0 ? Math.round((delivered / total) * 100) : 0;
+                                    const failRate = total > 0 ? Math.round((failed / total) * 100) : 0;
+
+                                    return (
+                                        <tr key={c.id}>
+                                            <td style={{ fontWeight: 500, maxWidth: 200 }}>
+                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title}</div>
+                                            </td>
+                                            <td>
+                                                <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--clr-text-3)' }}>{c.channel}</span>
+                                            </td>
+                                            <td><StatusBadge status={c.status} /></td>
+                                            <td>{total.toLocaleString()}</td>
+                                            <td className="text-green">{delivered.toLocaleString()}</td>
+                                            <td className="text-red">{failed.toLocaleString()}</td>
+                                            <td>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                    <div style={{ display: 'flex', gap: 6 }}>
+                                                        <div style={{ flex: 1, height: 6, background: 'var(--clr-surface-3)', borderRadius: 99, overflow: 'hidden', display: 'flex' }}>
+                                                            <div style={{ width: `${rate}%`, background: '#10b981', transition: 'width 0.8s cubic-bezier(0.16,1,0.3,1)' }} />
+                                                            <div style={{ width: `${failRate}%`, background: '#ef4444' }} />
+                                                        </div>
+                                                    </div>
+                                                    <span style={{ fontSize: 11, color: 'var(--clr-text-3)' }}>{rate}% delivered</span>
+                                                </div>
+                                            </td>
+                                            <td style={{ fontSize: 13 }}>{new Date(c.created_at).toLocaleDateString()}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+        </>
+    );
+}
