@@ -1,7 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-import { Plus, Search, Upload, Trash2, Tag, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Search, Upload, Trash2, Tag, X, ChevronLeft, ChevronRight, Download } from 'lucide-react';
+
+function downloadCsvTemplate() {
+    const headers = 'phone_number,first_name,last_name';
+    const example = '+2348012345678,John,Doe';
+    const csv = [headers, example].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'contacts_template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+}
 
 function StatusDot({ optOut }) {
     return (
@@ -167,6 +180,16 @@ function ImportModal({ onClose, onSaved, groups }) {
                                 <div className="dropzone-text">{file ? file.name : 'Click to select a CSV file'}</div>
                                 <div className="dropzone-hint">Columns: phone_number, first_name, last_name</div>
                                 <input ref={fileRef} type="file" accept=".csv" hidden onChange={e => setFile(e.target.files[0])} />
+                            </div>
+                            <div style={{ textAlign: 'center' }}>
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={(e) => { e.stopPropagation(); downloadCsvTemplate(); }}
+                                    style={{ fontSize: 13, color: 'var(--clr-accent)' }}
+                                >
+                                    <Download size={13} /> Download CSV Template
+                                </button>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Add to Group (optional)</label>

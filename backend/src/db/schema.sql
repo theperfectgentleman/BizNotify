@@ -102,7 +102,7 @@ CREATE OR REPLACE TRIGGER trg_messages_updated_at
 INSERT INTO users (email, password_hash, role)
 VALUES (
   'admin@biznotify.com',
-  '$2b$12$Y5R9t3FJV0IUVR2rLdq0sO0UkDnHe1tEI/IXqGTxgAkNq7wPq0NOO',
+  '$2b$12$GGfVQKJ9qK2O.uhpEvhVaOxGM8BM65JZw0MuK4pSbz28v3iNan5Be',
   'admin'
 )
 ON CONFLICT (email) DO NOTHING;

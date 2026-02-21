@@ -111,18 +111,143 @@ router.delete('/:id', requireAuth, async (req, res) => {
     }
 });
 
-// POST /contacts/import - CSV/Excel upload
+// ── Shared CSV parsing + validation helpers ──────────────────────────────────
+function buildHeaderMap(record) {
+    const norm = (s) => String(s).toLowerCase().replace(/[\s_\-]/g, '');
+    const map = {};
+    for (const key of Object.keys(record)) map[norm(key)] = key;
+    return map;
+}
+
+const PHONE_ALIASES = ['phonenumber', 'phone', 'mobile', 'tel', 'telephone', 'msisdn', 'number', 'contact'];
+const FNAME_ALIASES = ['firstname', 'fname', 'givenname', 'first'];
+const LNAME_ALIASES = ['lastname', 'lname', 'surname', 'familyname', 'last'];
+
+function resolveField(record, headerMap, aliases) {
+    for (const alias of aliases) {
+        const orig = headerMap[alias];
+        if (orig !== undefined) {
+            const val = record[orig];
+            if (val && String(val).trim()) return String(val).trim();
+        }
+    }
+    return null;
+}
+
+function parseCsv(buffer) {
+    const csvText = buffer.toString('utf8').replace(/^\uFEFF/, '');
+    return parse(csvText, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        relax_column_count: true,
+        relax_quotes: true,
+    });
+}
+
+function scanRecords(records) {
+    const headerMap = buildHeaderMap(records[0]);
+    const norm = (s) => String(s).toLowerCase().replace(/[\s_\-]/g, '');
+
+    // Detect which real column keys are mapped
+    const detectedCols = {
+        phone: PHONE_ALIASES.map(a => headerMap[a]).find(Boolean) || null,
+        firstName: FNAME_ALIASES.map(a => headerMap[a]).find(Boolean) || null,
+        lastName: LNAME_ALIASES.map(a => headerMap[a]).find(Boolean) || null,
+    };
+
+    const hasPhoneCol = !!detectedCols.phone;
+
+    const issues = [];
+    let validCount = 0;
+
+    for (let i = 0; i < records.length; i++) {
+        const record = records[i];
+        const rowNum = i + 2;
+        const rawPhone = resolveField(record, headerMap, PHONE_ALIASES);
+
+        if (!rawPhone) {
+            issues.push({ row: rowNum, reason: 'Missing phone number' });
+            continue;
+        }
+
+        const normalized = normalizePhone(rawPhone);
+        if (!normalized || !isValidPhone(normalized)) {
+            issues.push({ row: rowNum, raw: rawPhone, reason: `Invalid phone: "${rawPhone}"` });
+            continue;
+        }
+
+        validCount++;
+    }
+
+    return { detectedCols, hasPhoneCol, totalRows: records.length, validCount, issues };
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// POST /contacts/import/prescan — validate without writing anything
+router.post('/import/prescan', requireAuth, upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+        let records;
+        try {
+            records = parseCsv(req.file.buffer);
+        } catch (e) {
+            return res.status(400).json({ error: 'Could not parse CSV: ' + e.message });
+        }
+
+        if (!records.length) {
+            return res.status(400).json({ error: 'The CSV file is empty or has no data rows.' });
+        }
+
+        const scan = scanRecords(records);
+
+        if (!scan.hasPhoneCol) {
+            return res.status(400).json({
+                error: `No phone column detected. Expected one of: phone_number, phone, mobile, tel. ` +
+                    `File has: ${Object.keys(records[0]).join(', ')}`
+            });
+        }
+
+        res.json({
+            totalRows: scan.totalRows,
+            validCount: scan.validCount,
+            invalidCount: scan.issues.length,
+            detectedCols: scan.detectedCols,
+            allColumns: Object.keys(records[0]),
+            issues: scan.issues.slice(0, 100), // cap at 100 for display
+        });
+    } catch (err) {
+        console.error('[contacts/import/prescan]', err);
+        res.status(500).json({ error: 'Pre-scan failed' });
+    }
+});
+
+// POST /contacts/import - CSV bulk upload (robust)
+
 router.post('/import', requireAuth, upload.single('file'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
         const { group_id } = req.body;
 
-        const csvText = req.file.buffer.toString('utf8');
         let records;
         try {
-            records = parse(csvText, { columns: true, skip_empty_lines: true, trim: true });
+            records = parseCsv(req.file.buffer);
         } catch (e) {
-            return res.status(400).json({ error: 'Invalid CSV file: ' + e.message });
+            return res.status(400).json({ error: 'Could not parse CSV: ' + e.message });
+        }
+
+        if (!records.length) {
+            return res.status(400).json({ error: 'The CSV file is empty or has no data rows.' });
+        }
+
+        const headerMap = buildHeaderMap(records[0]);
+
+        if (!PHONE_ALIASES.some(a => headerMap[a] !== undefined)) {
+            return res.status(400).json({
+                error: `No phone column found. Expected one of: phone_number, phone, mobile, tel. ` +
+                    `File has: ${Object.keys(records[0]).join(', ')}`
+            });
         }
 
         const client = await db.getClient();
@@ -133,22 +258,38 @@ router.post('/import', requireAuth, upload.single('file'), async (req, res) => {
         try {
             await client.query('BEGIN');
 
-            for (const record of records) {
-                const rawPhone = record.phone_number || record.phone || record.mobile || record.tel;
-                const normalized = normalizePhone(rawPhone);
-                if (!normalized || !isValidPhone(normalized)) {
+            for (let i = 0; i < records.length; i++) {
+                const record = records[i];
+                const rowNum = i + 2; // +1 for 0-index, +1 to skip header
+                const rawPhone = resolveField(record, headerMap, PHONE_ALIASES);
+
+                if (!rawPhone) {
                     skipped++;
-                    errors.push({ row: record, reason: 'Invalid phone number' });
+                    errors.push({ row: rowNum, reason: 'Missing phone number' });
                     continue;
                 }
 
+                const normalized = normalizePhone(rawPhone);
+                if (!normalized || !isValidPhone(normalized)) {
+                    skipped++;
+                    errors.push({ row: rowNum, phone: rawPhone, reason: `Invalid phone number: "${rawPhone}"` });
+                    continue;
+                }
+
+                const firstName = resolveField(record, headerMap, FNAME_ALIASES);
+                const lastName = resolveField(record, headerMap, LNAME_ALIASES);
+
                 try {
+                    // Per-row savepoint: one bad row never aborts the batch
+                    await client.query('SAVEPOINT sp_row');
                     const { rows } = await client.query(
                         `INSERT INTO contacts (phone_number, first_name, last_name)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (phone_number) DO UPDATE SET first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name
-             RETURNING id`,
-                        [normalized, record.first_name || record.firstname || null, record.last_name || record.lastname || null]
+                         VALUES ($1, $2, $3)
+                         ON CONFLICT (phone_number) DO UPDATE
+                           SET first_name = EXCLUDED.first_name,
+                               last_name  = EXCLUDED.last_name
+                         RETURNING id`,
+                        [normalized, firstName || null, lastName || null]
                     );
 
                     if (group_id) {
@@ -157,10 +298,12 @@ router.post('/import', requireAuth, upload.single('file'), async (req, res) => {
                             [rows[0].id, group_id]
                         );
                     }
+                    await client.query('RELEASE SAVEPOINT sp_row');
                     imported++;
                 } catch (rowErr) {
+                    await client.query('ROLLBACK TO SAVEPOINT sp_row');
                     skipped++;
-                    errors.push({ row: record, reason: rowErr.message });
+                    errors.push({ row: rowNum, phone: normalized, reason: rowErr.message });
                 }
             }
 
@@ -172,10 +315,10 @@ router.post('/import', requireAuth, upload.single('file'), async (req, res) => {
             client.release();
         }
 
-        res.json({ imported, skipped, total: records.length, errors: errors.slice(0, 20) });
+        res.json({ imported, skipped, total: records.length, errors: errors.slice(0, 50) });
     } catch (err) {
         console.error('[contacts/import]', err);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: 'Internal server error during import' });
     }
 });
 
