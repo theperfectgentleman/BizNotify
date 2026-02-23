@@ -1,8 +1,58 @@
 const router = require('express').Router();
+const { randomUUID } = require('crypto');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
-const { enqueueCampaignJobs, enqueueInstantBulkJobs } = require('../workers/queue');
+const {
+    enqueueCampaignJobs,
+    enqueueInstantBulkJobs,
+    enqueueScheduledJob,
+    scheduleCampaignItemDispatch,
+} = require('../workers/queue');
 const { normalizePhone, isValidPhone } = require('../utils/phone');
+
+function normalizeCampaignChannel(value) {
+    const channel = String(value || 'generic').toLowerCase();
+    if (channel === 'whatsapp') return 'whatsapp';
+    if (channel === 'sms') return 'generic';
+    if (channel === 'dnd') return 'dnd';
+    return 'generic';
+}
+
+function normalizeCampaignStorageChannel(value) {
+    const channel = String(value || 'generic').toLowerCase();
+    return channel === 'whatsapp' ? 'whatsapp' : 'sms';
+}
+
+async function replaceCampaignItemAudience(client, campaignItemId, groupIds = [], contactIds = []) {
+    await client.query(`DELETE FROM campaign_item_groups WHERE campaign_item_id = $1`, [campaignItemId]);
+    await client.query(`DELETE FROM campaign_item_contacts WHERE campaign_item_id = $1`, [campaignItemId]);
+
+    if (Array.isArray(groupIds) && groupIds.length > 0) {
+        await Promise.all(
+            groupIds.map((groupId) =>
+                client.query(
+                    `INSERT INTO campaign_item_groups (campaign_item_id, group_id)
+                     VALUES ($1, $2)
+                     ON CONFLICT (campaign_item_id, group_id) DO NOTHING`,
+                    [campaignItemId, groupId]
+                )
+            )
+        );
+    }
+
+    if (Array.isArray(contactIds) && contactIds.length > 0) {
+        await Promise.all(
+            contactIds.map((contactId) =>
+                client.query(
+                    `INSERT INTO campaign_item_contacts (campaign_item_id, contact_id)
+                     VALUES ($1, $2)
+                     ON CONFLICT (campaign_item_id, contact_id) DO NOTHING`,
+                    [campaignItemId, contactId]
+                )
+            )
+        );
+    }
+}
 
 // POST /messages/send
 router.post('/send', requireAuth, async (req, res) => {
@@ -111,6 +161,7 @@ router.post('/send', requireAuth, async (req, res) => {
 
         const client = await db.getClient();
         let campaign;
+        let campaignItem;
         try {
             await client.query('BEGIN');
 
@@ -118,15 +169,36 @@ router.post('/send', requireAuth, async (req, res) => {
             const { rows: campaignRows } = await client.query(
                 `INSERT INTO campaigns (user_id, title, message_body, channel, scheduled_at, status)
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-                [req.user.id, title, effectiveCampaignBody, channel, scheduled_at || null, scheduled_at ? 'queued' : 'processing']
+                [req.user.id, title, effectiveCampaignBody, normalizeCampaignStorageChannel(channel), scheduled_at || null, scheduled_at ? 'queued' : 'processing']
             );
             campaign = campaignRows[0];
+
+            const { rows: campaignItemRows } = await client.query(
+                `INSERT INTO campaign_items
+                 (campaign_id, title, message_body, channel, sender_id, message_type, scheduled_at, status, position, queue_job_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9)
+                 RETURNING *`,
+                [
+                    campaign.id,
+                    title,
+                    effectiveCampaignBody,
+                    normalizeCampaignChannel(channel),
+                    sender_id,
+                    message_type,
+                    scheduled_at || new Date().toISOString(),
+                    scheduled_at ? 'scheduled' : 'queued',
+                    null,
+                ]
+            );
+            campaignItem = campaignItemRows[0];
+
+            await replaceCampaignItemAudience(client, campaignItem.id, group_ids || [], contact_ids || []);
 
             // Create message records
             const messageInserts = contacts.map((c) =>
                 client.query(
-                    `INSERT INTO messages (campaign_id, contact_id, status) VALUES ($1, $2, 'queued') RETURNING id`,
-                    [campaign.id, c.id]
+                    `INSERT INTO messages (campaign_id, campaign_item_id, contact_id, status) VALUES ($1, $2, $3, 'queued') RETURNING id`,
+                    [campaign.id, campaignItem.id, c.id]
                 )
             );
             const messageResults = await Promise.all(messageInserts);
@@ -144,6 +216,7 @@ router.post('/send', requireAuth, async (req, res) => {
 
                 return {
                     messageId: messageResults[idx].rows[0].id,
+                    campaignItemId: campaignItem.id,
                     contactId: c.id,
                     phone: c.phone_number,
                     messageBody: personalizedBody,
@@ -153,7 +226,13 @@ router.post('/send', requireAuth, async (req, res) => {
                 };
             });
 
-            await enqueueCampaignJobs(campaign.id, jobs);
+            if (scheduled_at) {
+                await Promise.all(
+                    jobs.map((jobData) => enqueueScheduledJob(campaign.id, jobData, scheduled_at))
+                );
+            } else {
+                await enqueueCampaignJobs(campaign.id, jobs);
+            }
 
         } catch (err) {
             await client.query('ROLLBACK');
@@ -303,6 +382,370 @@ router.post('/instant', requireAuth, async (req, res) => {
     } catch (err) {
         console.error('[messages/instant]', err);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// POST /messages/campaigns - create campaign shell
+router.post('/campaigns', requireAuth, async (req, res) => {
+    try {
+        const { title, channel = 'generic' } = req.body;
+        if (!title || !String(title).trim()) {
+            return res.status(400).json({ error: 'title is required' });
+        }
+
+        const { rows } = await db.query(
+            `INSERT INTO campaigns (user_id, title, message_body, channel, status)
+             VALUES ($1, $2, $3, $4, 'draft')
+             RETURNING *`,
+            [
+                req.user.id,
+                String(title).trim(),
+                'Campaign series',
+                normalizeCampaignStorageChannel(channel)
+            ]
+        );
+
+        return res.status(201).json({ campaign: rows[0] });
+    } catch (err) {
+        console.error('[messages/campaigns:create]', err);
+        return res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+    }
+});
+
+// GET /messages/campaigns/:campaignId/items
+router.get('/campaigns/:campaignId/items', requireAuth, async (req, res) => {
+    try {
+        const { campaignId } = req.params;
+
+        const { rows: campaignRows } = await db.query(
+            `SELECT id, title, channel, status, created_at, updated_at
+             FROM campaigns
+             WHERE id = $1 AND user_id = $2`,
+            [campaignId, req.user.id]
+        );
+        const campaign = campaignRows[0];
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+        const { rows: items } = await db.query(
+            `SELECT
+               ci.*,
+               COUNT(m.id)::int AS total_messages,
+               COUNT(m.id) FILTER (WHERE m.status IN ('sent', 'delivered'))::int AS sent_messages,
+               COUNT(m.id) FILTER (WHERE m.status = 'failed')::int AS failed_messages,
+               COUNT(m.id) FILTER (WHERE m.status = 'queued')::int AS queued_messages,
+               (ci.status IN ('draft', 'scheduled')) AS can_edit
+             FROM campaign_items ci
+             LEFT JOIN messages m ON m.campaign_item_id = ci.id
+             WHERE ci.campaign_id = $1
+             GROUP BY ci.id
+             ORDER BY ci.scheduled_at ASC, ci.position ASC`,
+            [campaignId]
+        );
+
+        return res.json({ campaign, items });
+    } catch (err) {
+        console.error('[messages/campaign-items:list]', err);
+        return res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+    }
+});
+
+// POST /messages/campaigns/:campaignId/items
+router.post('/campaigns/:campaignId/items', requireAuth, async (req, res) => {
+    try {
+        const { campaignId } = req.params;
+        const {
+            title = null,
+            message_body,
+            scheduled_at,
+            group_ids = [],
+            contact_ids = [],
+            channel = 'generic',
+            sender_id = null,
+            message_type = 'plain',
+        } = req.body;
+
+        if (!message_body || !String(message_body).trim()) {
+            return res.status(400).json({ error: 'message_body is required' });
+        }
+        if (!scheduled_at) {
+            return res.status(400).json({ error: 'scheduled_at is required' });
+        }
+        if ((!Array.isArray(group_ids) || group_ids.length === 0) && (!Array.isArray(contact_ids) || contact_ids.length === 0)) {
+            return res.status(400).json({ error: 'At least one group_id or contact_id is required' });
+        }
+
+        const { rows: campaignRows } = await db.query(
+            `SELECT id FROM campaigns WHERE id = $1 AND user_id = $2`,
+            [campaignId, req.user.id]
+        );
+        if (!campaignRows[0]) return res.status(404).json({ error: 'Campaign not found' });
+
+        const dispatchToken = randomUUID();
+        const client = await db.getClient();
+        let campaignItem;
+        try {
+            await client.query('BEGIN');
+
+            const { rows: positionRows } = await client.query(
+                `SELECT COALESCE(MAX(position), 0) + 1 AS next_position
+                 FROM campaign_items
+                 WHERE campaign_id = $1`,
+                [campaignId]
+            );
+            const nextPosition = Number(positionRows[0].next_position || 1);
+
+            const { rows: itemRows } = await client.query(
+                `INSERT INTO campaign_items
+                 (campaign_id, title, message_body, channel, sender_id, message_type, scheduled_at, status, position, queue_job_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'scheduled', $8, $9)
+                 RETURNING *`,
+                [
+                    campaignId,
+                    title ? String(title).trim() : null,
+                    String(message_body).trim(),
+                    normalizeCampaignChannel(channel),
+                    sender_id,
+                    message_type,
+                    scheduled_at,
+                    nextPosition,
+                    dispatchToken,
+                ]
+            );
+            campaignItem = itemRows[0];
+
+            await replaceCampaignItemAudience(client, campaignItem.id, group_ids, contact_ids);
+
+            await client.query(
+                `UPDATE campaigns
+                 SET status = 'queued', updated_at = NOW()
+                 WHERE id = $1`,
+                [campaignId]
+            );
+
+            await client.query('COMMIT');
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
+
+        try {
+            await scheduleCampaignItemDispatch(campaignItem.id, scheduled_at, dispatchToken);
+        } catch (err) {
+            await db.query(
+                `UPDATE campaign_items SET status = 'failed', updated_at = NOW() WHERE id = $1`,
+                [campaignItem.id]
+            );
+            throw err;
+        }
+
+        return res.status(201).json({ item: campaignItem });
+    } catch (err) {
+        console.error('[messages/campaign-items:create]', err);
+        return res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+    }
+});
+
+// PATCH /messages/campaign-items/:itemId
+router.patch('/campaign-items/:itemId', requireAuth, async (req, res) => {
+    try {
+        const { itemId } = req.params;
+        const {
+            title,
+            message_body,
+            scheduled_at,
+            group_ids,
+            contact_ids,
+            channel,
+            sender_id,
+            message_type,
+        } = req.body;
+
+        const { rows: itemRows } = await db.query(
+            `SELECT ci.*, c.user_id
+             FROM campaign_items ci
+             JOIN campaigns c ON c.id = ci.campaign_id
+             WHERE ci.id = $1`,
+            [itemId]
+        );
+        const current = itemRows[0];
+        if (!current || current.user_id !== req.user.id) {
+            return res.status(404).json({ error: 'Campaign item not found' });
+        }
+        if (!['draft', 'scheduled'].includes(current.status)) {
+            return res.status(400).json({ error: 'Only draft/scheduled items can be edited' });
+        }
+
+        const nextScheduledAt = scheduled_at || current.scheduled_at;
+        const nextDispatchToken = randomUUID();
+
+        const client = await db.getClient();
+        let updatedItem;
+        try {
+            await client.query('BEGIN');
+
+            const { rows: updatedRows } = await client.query(
+                `UPDATE campaign_items
+                 SET title = $2,
+                     message_body = $3,
+                     channel = $4,
+                     sender_id = $5,
+                     message_type = $6,
+                     scheduled_at = $7,
+                     status = 'scheduled',
+                     queue_job_id = $8,
+                     locked_at = NULL,
+                     updated_at = NOW()
+                 WHERE id = $1
+                 RETURNING *`,
+                [
+                    itemId,
+                    title !== undefined ? (title ? String(title).trim() : null) : current.title,
+                    message_body !== undefined ? String(message_body).trim() : current.message_body,
+                    channel !== undefined ? normalizeCampaignChannel(channel) : current.channel,
+                    sender_id !== undefined ? sender_id : current.sender_id,
+                    message_type !== undefined ? message_type : current.message_type,
+                    nextScheduledAt,
+                    nextDispatchToken,
+                ]
+            );
+            updatedItem = updatedRows[0];
+
+            if (Array.isArray(group_ids) || Array.isArray(contact_ids)) {
+                const resolvedGroupIds = Array.isArray(group_ids)
+                    ? group_ids
+                    : (await client.query(
+                        `SELECT group_id FROM campaign_item_groups WHERE campaign_item_id = $1`,
+                        [itemId]
+                    )).rows.map((row) => row.group_id);
+
+                const resolvedContactIds = Array.isArray(contact_ids)
+                    ? contact_ids
+                    : (await client.query(
+                        `SELECT contact_id FROM campaign_item_contacts WHERE campaign_item_id = $1`,
+                        [itemId]
+                    )).rows.map((row) => row.contact_id);
+
+                if (resolvedGroupIds.length === 0 && resolvedContactIds.length === 0) {
+                    const audienceError = new Error('At least one group_id or contact_id is required');
+                    audienceError.status = 400;
+                    throw audienceError;
+                }
+
+                await replaceCampaignItemAudience(client, itemId, resolvedGroupIds, resolvedContactIds);
+            }
+
+            await client.query('COMMIT');
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
+
+        try {
+            await scheduleCampaignItemDispatch(itemId, nextScheduledAt, nextDispatchToken);
+        } catch (err) {
+            await db.query(`UPDATE campaign_items SET status = 'failed', updated_at = NOW() WHERE id = $1`, [itemId]);
+            throw err;
+        }
+
+        return res.json({ item: updatedItem });
+    } catch (err) {
+        console.error('[messages/campaign-items:update]', err);
+        return res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+    }
+});
+
+// POST /messages/campaign-items/:itemId/clone
+router.post('/campaign-items/:itemId/clone', requireAuth, async (req, res) => {
+    try {
+        const { itemId } = req.params;
+        const cloneScheduledAt = req.body?.scheduled_at || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+        const { rows: sourceRows } = await db.query(
+            `SELECT ci.*, c.user_id
+             FROM campaign_items ci
+             JOIN campaigns c ON c.id = ci.campaign_id
+             WHERE ci.id = $1`,
+            [itemId]
+        );
+        const source = sourceRows[0];
+        if (!source || source.user_id !== req.user.id) {
+            return res.status(404).json({ error: 'Campaign item not found' });
+        }
+
+        const dispatchToken = randomUUID();
+        const client = await db.getClient();
+        let clonedItem;
+        try {
+            await client.query('BEGIN');
+
+            const { rows: positionRows } = await client.query(
+                `SELECT COALESCE(MAX(position), 0) + 1 AS next_position
+                 FROM campaign_items
+                 WHERE campaign_id = $1`,
+                [source.campaign_id]
+            );
+            const nextPosition = Number(positionRows[0].next_position || 1);
+
+            const { rows: cloneRows } = await client.query(
+                `INSERT INTO campaign_items
+                 (campaign_id, title, message_body, channel, sender_id, message_type, scheduled_at, status, position, queue_job_id, cloned_from_item_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'scheduled', $8, $9, $10)
+                 RETURNING *`,
+                [
+                    source.campaign_id,
+                    source.title,
+                    source.message_body,
+                    source.channel,
+                    source.sender_id,
+                    source.message_type,
+                    cloneScheduledAt,
+                    nextPosition,
+                    dispatchToken,
+                    source.id,
+                ]
+            );
+            clonedItem = cloneRows[0];
+
+            await client.query(
+                `INSERT INTO campaign_item_groups (campaign_item_id, group_id)
+                 SELECT $1, group_id
+                 FROM campaign_item_groups
+                 WHERE campaign_item_id = $2
+                 ON CONFLICT (campaign_item_id, group_id) DO NOTHING`,
+                [clonedItem.id, source.id]
+            );
+            await client.query(
+                `INSERT INTO campaign_item_contacts (campaign_item_id, contact_id)
+                 SELECT $1, contact_id
+                 FROM campaign_item_contacts
+                 WHERE campaign_item_id = $2
+                 ON CONFLICT (campaign_item_id, contact_id) DO NOTHING`,
+                [clonedItem.id, source.id]
+            );
+
+            await client.query('COMMIT');
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
+
+        try {
+            await scheduleCampaignItemDispatch(clonedItem.id, cloneScheduledAt, dispatchToken);
+        } catch (err) {
+            await db.query(`UPDATE campaign_items SET status = 'failed', updated_at = NOW() WHERE id = $1`, [clonedItem.id]);
+            throw err;
+        }
+
+        return res.status(201).json({ item: clonedItem });
+    } catch (err) {
+        console.error('[messages/campaign-items:clone]', err);
+        return res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
     }
 });
 

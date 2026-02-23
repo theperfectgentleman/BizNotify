@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
 import { BarChart2, CheckCircle2, XCircle, Send, Clock, Inbox } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
@@ -34,6 +36,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 export default function AnalyticsPage() {
+    const navigate = useNavigate();
     const [campaigns, setCampaigns] = useState([]);
     const [stats, setStats] = useState(null);
     const [inbox, setInbox] = useState([]);
@@ -53,6 +56,17 @@ export default function AnalyticsPage() {
 
     if (loading) return <div className="loading-center"><span className="spinner spinner-lg" /></div>;
 
+    const createSeriesCampaign = async () => {
+        const title = window.prompt('Campaign title');
+        if (!title || !title.trim()) return;
+        try {
+            const { data } = await api.post('/messages/campaigns', { title: title.trim(), channel: 'generic' });
+            navigate(`/app/campaigns/${data.campaign.id}/items`);
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Failed to create campaign');
+        }
+    };
+
     // Chart data
     const chartData = campaigns.slice(0, 10).map(c => ({
         name: c.title.length > 18 ? c.title.slice(0, 18) + '…' : c.title,
@@ -68,6 +82,9 @@ export default function AnalyticsPage() {
                     <div className="page-title">Analytics</div>
                     <div className="page-subtitle">Campaign performance and delivery breakdown</div>
                 </div>
+                <button className="btn btn-primary" onClick={createSeriesCampaign}>
+                    <Send size={14} /> New Series Campaign
+                </button>
             </div>
 
             {/* Overall Stats */}
@@ -127,6 +144,7 @@ export default function AnalyticsPage() {
                                     <th>Failed</th>
                                     <th>Delivery Rate</th>
                                     <th>Created</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -161,6 +179,15 @@ export default function AnalyticsPage() {
                                                 </div>
                                             </td>
                                             <td style={{ fontSize: 13 }}>{new Date(c.created_at).toLocaleDateString()}</td>
+                                            <td>
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-secondary btn-sm"
+                                                    onClick={() => navigate(`/app/campaigns/${c.id}/items`)}
+                                                >
+                                                    Manage
+                                                </button>
+                                            </td>
                                         </tr>
                                     );
                                 })}

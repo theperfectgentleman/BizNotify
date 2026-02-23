@@ -15,6 +15,7 @@ import ComposePage from './pages/ComposePage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import UsersPage from './pages/UsersPage';
 import SenderIdPage from './pages/SenderIdPage';
+import CampaignItemsPage from './pages/CampaignItemsPage';
 
 export default function App() {
   return (
@@ -61,6 +62,7 @@ export default function App() {
               <Route path="compose/campaign" element={<ComposePage />} />
               <Route path="compose/instant" element={<ComposePage />} />
               <Route path="analytics" element={<AnalyticsPage />} />
+              <Route path="campaigns/:campaignId/items" element={<CampaignItemsPage />} />
               <Route path="sender-ids" element={<SenderIdPage />} />
               <Route path="users" element={<UsersPage />} />
             </Route>
