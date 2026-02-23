@@ -1,7 +1,8 @@
 const router = require('express').Router();
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
-const { enqueueCampaignJobs } = require('../workers/queue');
+const { enqueueCampaignJobs, enqueueInstantBulkJobs } = require('../workers/queue');
+const { normalizePhone, isValidPhone } = require('../utils/phone');
 
 // POST /messages/send
 router.post('/send', requireAuth, async (req, res) => {
@@ -113,42 +114,95 @@ router.post('/send', requireAuth, async (req, res) => {
 // POST /messages/instant
 router.post('/instant', requireAuth, async (req, res) => {
     try {
-        const { target_phones, message_body, channel = 'generic', sender_id = null, message_type = 'plain' } = req.body;
+        const {
+            target_phones = '',
+            group_ids = [],
+            message_body,
+            channel = 'generic',
+            sender_id = null,
+            message_type = 'plain'
+        } = req.body;
 
-        if (!target_phones || !message_body) {
-            return res.status(400).json({ error: 'target_phones and message_body are required' });
+        if (!message_body || !String(message_body).trim()) {
+            return res.status(400).json({ error: 'message_body is required' });
         }
 
-        const rawPhones = target_phones.split(/[\s,;]+/).filter(Boolean);
-        const phones = [...new Set(rawPhones)]; // Remove duplicate entries
-        if (phones.length === 0) return res.status(400).json({ error: 'No valid phone numbers provided' });
+        const manualPhones = String(target_phones)
+            .split(/[\s,;]+/)
+            .map((value) => normalizePhone(value))
+            .filter((value) => isValidPhone(value));
 
-        const channelMap = { sms: 'generic', whatsapp: 'whatsapp', generic: 'generic', dnd: 'dnd' };
-        const termiiChannel = channelMap[channel] || 'generic';
+        const recipientMap = new Map();
 
-        const { sendSms, sendBulkSms } = require('../services/termii');
+        if (Array.isArray(group_ids) && group_ids.length > 0) {
+            const { rows: groupContacts } = await db.query(
+                `SELECT DISTINCT c.id AS contact_id, c.phone_number
+                 FROM contacts c
+                 INNER JOIN contact_groups cg ON cg.contact_id = c.id
+                 WHERE c.opt_out = FALSE AND cg.group_id = ANY($1::uuid[])`,
+                [group_ids]
+            );
 
-        let result;
-        if (phones.length === 1) {
-            result = await sendSms(phones[0], message_body, termiiChannel, sender_id, message_type);
-        } else {
-            result = await sendBulkSms(phones, message_body, termiiChannel, sender_id, message_type);
+            groupContacts.forEach((contact) => {
+                const phone = normalizePhone(contact.phone_number);
+                if (!isValidPhone(phone)) return;
+                recipientMap.set(phone, { phone, contactId: contact.contact_id });
+            });
+        }
+
+        if (manualPhones.length > 0) {
+            const uniqueManualPhones = [...new Set(manualPhones)];
+            const { rows: existingContacts } = await db.query(
+                `SELECT id, phone_number FROM contacts WHERE phone_number = ANY($1::text[])`,
+                [uniqueManualPhones]
+            );
+            const contactPhoneMap = new Map(
+                existingContacts
+                    .map((contact) => [normalizePhone(contact.phone_number), contact.id])
+                    .filter(([phone]) => isValidPhone(phone))
+            );
+
+            uniqueManualPhones.forEach((phone) => {
+                const existing = recipientMap.get(phone);
+                recipientMap.set(phone, {
+                    phone,
+                    contactId: existing?.contactId || contactPhoneMap.get(phone) || null,
+                });
+            });
+        }
+
+        const recipients = [...recipientMap.values()];
+        if (recipients.length === 0) {
+            return res.status(400).json({ error: 'No valid recipients found from groups or target numbers' });
+        }
+
+        const maxRecipients = Number(process.env.INSTANT_MAX_RECIPIENTS || 50000);
+        if (Number.isFinite(maxRecipients) && maxRecipients > 0 && recipients.length > maxRecipients) {
+            return res.status(400).json({
+                error: `Recipient count exceeds limit (${maxRecipients}). Reduce selected groups or target numbers.`
+            });
         }
 
         const client = await db.getClient();
+        let persistedRecipients;
         try {
             await client.query('BEGIN');
 
-            // For ad-hoc bulk messages, just store the target_phone
-            // We can optionally link contact_ids later if they exist in DB
-            const inserts = phones.map((p) =>
+            const inserts = recipients.map((recipient) =>
                 client.query(
-                    `INSERT INTO messages (target_phone, termii_message_id, status, error_reason)
-                     VALUES ($1, $2, $3, $4)`,
-                    [p, result.messageId || null, result.success ? 'sent' : 'failed', result.error || null]
+                    `INSERT INTO messages (contact_id, target_phone, status)
+                     VALUES ($1, $2, 'queued')
+                     RETURNING id`,
+                    [recipient.contactId, recipient.phone]
                 )
             );
-            await Promise.all(inserts);
+            const insertResults = await Promise.all(inserts);
+
+            persistedRecipients = recipients.map((recipient, idx) => ({
+                phone: recipient.phone,
+                messageId: insertResults[idx].rows[0].id,
+            }));
+
             await client.query('COMMIT');
         } catch (err) {
             await client.query('ROLLBACK');
@@ -157,11 +211,33 @@ router.post('/instant', requireAuth, async (req, res) => {
             client.release();
         }
 
-        if (result.success) {
-            return res.status(200).json({ message: 'Message sent successfully', messageId: result.messageId, count: phones.length });
+        let batches;
+        if (channel === 'whatsapp') {
+            const jobs = persistedRecipients.map((recipient) => ({
+                messageId: recipient.messageId,
+                phone: recipient.phone,
+                messageBody: message_body,
+                channel,
+                customSender: sender_id,
+                msgType: message_type,
+            }));
+            await enqueueCampaignJobs(null, jobs);
+            batches = jobs.length;
         } else {
-            return res.status(400).json({ error: result.error });
+            batches = await enqueueInstantBulkJobs({
+                recipients: persistedRecipients,
+                messageBody: message_body,
+                channel,
+                customSender: sender_id,
+                msgType: message_type,
+            });
         }
+
+        return res.status(202).json({
+            message: 'Instant message queued for background delivery',
+            count: recipients.length,
+            batches,
+        });
     } catch (err) {
         console.error('[messages/instant]', err);
         res.status(500).json({ error: 'Internal server error' });

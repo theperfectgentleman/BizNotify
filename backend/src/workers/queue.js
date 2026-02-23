@@ -7,11 +7,12 @@
  */
 const PgBoss = require('pg-boss');
 const db = require('../db');
-const { sendSms } = require('../services/termii');
+const { sendSms, sendBulkSms } = require('../services/termii');
 
 let boss;
 
 const JOB_NAME = 'send-message';
+const INSTANT_BULK_JOB_NAME = 'send-instant-bulk';
 
 async function initQueue() {
     boss = new PgBoss(process.env.DATABASE_URL);
@@ -23,7 +24,9 @@ async function initQueue() {
 
     // Worker: up to 5 concurrent jobs
     boss.work(JOB_NAME, { teamSize: 5, teamConcurrency: 5 }, processMessage);
+    boss.work(INSTANT_BULK_JOB_NAME, { teamSize: 3, teamConcurrency: 3 }, processInstantBulkMessage);
     console.log(`✅ Worker listening on job "${JOB_NAME}"`);
+    console.log(`✅ Worker listening on job "${INSTANT_BULK_JOB_NAME}"`);
 
     return boss;
 }
@@ -51,6 +54,33 @@ async function processMessage(job) {
     }
 }
 
+async function processInstantBulkMessage(job) {
+    const { messageIds, phones, messageBody, channel, customSender, msgType } = job.data;
+
+    const channelMap = { sms: 'generic', whatsapp: 'whatsapp', generic: 'generic', dnd: 'dnd' };
+    const termiiChannel = channelMap[channel] || 'generic';
+
+    const result = await sendBulkSms(phones, messageBody, termiiChannel, customSender, msgType);
+
+    if (result.success) {
+        await db.query(
+            `UPDATE messages
+             SET status = 'sent', termii_message_id = $1, updated_at = NOW()
+             WHERE id = ANY($2::uuid[])`,
+            [result.messageId || null, messageIds]
+        );
+        return;
+    }
+
+    await db.query(
+        `UPDATE messages
+         SET status = 'failed', error_reason = $1, updated_at = NOW()
+         WHERE id = ANY($2::uuid[])`,
+        [result.error, messageIds]
+    );
+    throw new Error(result.error);
+}
+
 /**
  * Enqueue a batch of message jobs for a campaign.
  * pg-boss v8 uses send() per job (no bulk insert method).
@@ -73,6 +103,42 @@ async function enqueueCampaignJobs(campaignId, jobs) {
     );
 }
 
+async function enqueueInstantBulkJobs({ recipients, messageBody, channel, customSender, msgType }) {
+    if (!boss) throw new Error('Queue not initialized');
+
+    const chunkSize = Math.max(1, Number(process.env.INSTANT_BULK_CHUNK_SIZE) || 100);
+    const jobOptions = {
+        retryLimit: 3,
+        retryDelay: 30,
+        retryBackoff: true,
+        expireInHours: 24,
+    };
+
+    const batches = [];
+    for (let index = 0; index < recipients.length; index += chunkSize) {
+        batches.push(recipients.slice(index, index + chunkSize));
+    }
+
+    await Promise.all(
+        batches.map((batch) =>
+            boss.send(
+                INSTANT_BULK_JOB_NAME,
+                {
+                    messageIds: batch.map((item) => item.messageId),
+                    phones: batch.map((item) => item.phone),
+                    messageBody,
+                    channel,
+                    customSender,
+                    msgType,
+                },
+                jobOptions
+            )
+        )
+    );
+
+    return batches.length;
+}
+
 /**
  * Enqueue a single scheduled job.
  */
@@ -87,4 +153,4 @@ async function enqueueScheduledJob(campaignId, jobData, scheduledAt) {
     );
 }
 
-module.exports = { initQueue, enqueueCampaignJobs, enqueueScheduledJob };
+module.exports = { initQueue, enqueueCampaignJobs, enqueueScheduledJob, enqueueInstantBulkJobs };

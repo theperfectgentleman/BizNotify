@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-import { Send, MessageSquare, Type } from 'lucide-react';
+import { Send, MessageSquare, Type, X, ChevronDown } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import PropTypes from 'prop-types';
 
@@ -44,6 +44,9 @@ export default function ComposePage() {
     });
     const [loading, setLoading] = useState(false);
     const [preview, setPreview] = useState('');
+    const [groupSearch, setGroupSearch] = useState('');
+    const [showGroupDropdown, setShowGroupDropdown] = useState(false);
+    const groupDropdownRef = useRef(null);
 
     useEffect(() => {
         api.get('/groups').then(r => setGroups(r.data));
@@ -68,6 +71,29 @@ export default function ComposePage() {
         );
     }, [form.message_body, form.target_phones, mode]);
 
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (!groupDropdownRef.current) return;
+            if (!groupDropdownRef.current.contains(event.target)) {
+                setShowGroupDropdown(false);
+            }
+        };
+
+        const handleEscape = (event) => {
+            if (event.key === 'Escape') {
+                setShowGroupDropdown(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('keydown', handleEscape);
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('keydown', handleEscape);
+        };
+    }, []);
+
     const toggleGroup = (id) => {
         setForm(f => ({
             ...f,
@@ -76,6 +102,18 @@ export default function ComposePage() {
                 : [...f.group_ids, id]
         }));
     };
+
+    const manualPhones = form.target_phones
+        .split(/[\s,;]+/)
+        .map(v => v.trim())
+        .filter(Boolean);
+    const uniqueManualPhoneCount = new Set(manualPhones).size;
+    const selectedGroups = groups.filter(g => form.group_ids.includes(g.id));
+    const filteredGroups = groups.filter(g =>
+        g.name.toLowerCase().includes(groupSearch.trim().toLowerCase()) && !form.group_ids.includes(g.id)
+    );
+    const selectedGroupContactCount = selectedGroups.reduce((acc, group) => acc + Number(group.contact_count || 0), 0);
+    const isWhatsApp = form.channel === 'whatsapp';
 
     const insertVar = (variable) => {
         setForm(f => ({ ...f, message_body: f.message_body + `{{${variable}}}` }));
@@ -89,7 +127,9 @@ export default function ComposePage() {
             if (!form.title.trim()) return toast.error('Campaign title is required');
             if (!form.group_ids.length) return toast.error('Select at least one group');
         } else {
-            if (!form.target_phones.trim()) return toast.error('Target phone numbers are required');
+            if (!form.target_phones.trim() && !form.group_ids.length) {
+                return toast.error('Add at least one group or target phone number');
+            }
         }
 
         setLoading(true);
@@ -110,14 +150,17 @@ export default function ComposePage() {
             } else {
                 const payload = {
                     target_phones: form.target_phones,
+                    group_ids: form.group_ids,
                     message_body: form.message_body,
                     channel: form.channel,
                     sender_id: form.sender_id || undefined,
                     message_type: form.message_type
                 };
                 const { data } = await api.post('/messages/instant', payload);
-                toast.success(`Sent successfully to ${data.count || 1} contact(s)!`);
-                setForm(f => ({ ...f, target_phones: '', message_body: '' }));
+                toast.success(`Queued ${data.count || 0} recipient(s) in ${data.batches || 0} batch(es) for delivery.`);
+                setForm(f => ({ ...f, target_phones: '', message_body: '', group_ids: [] }));
+                setGroupSearch('');
+                setShowGroupDropdown(false);
             }
         } catch (err) {
             toast.error(err.response?.data?.error || 'Failed to send message');
@@ -129,12 +172,61 @@ export default function ComposePage() {
     return (
         <>
             <div className="page-header">
-                <div>
-                    <div className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        {mode === 'campaign' ? 'Compose Campaign' : 'Send Instant Message'}
+                <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+                    <div>
+                        <div className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            {mode === 'campaign' ? 'Compose Campaign' : 'Send Instant Message'}
+                        </div>
+                        <div className="page-subtitle">
+                            {mode === 'campaign' ? 'Write your message and choose your audience' : 'Send to selected groups and manually entered numbers via SMS or WhatsApp'}
+                        </div>
                     </div>
-                    <div className="page-subtitle">
-                        {mode === 'campaign' ? 'Write your message and choose your audience' : 'Send a direct message to a single number right now'}
+                    <div style={{ minWidth: 220 }}>
+                        <div className="form-label" style={{ marginBottom: 8 }}>Channel</div>
+                        <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            background: 'var(--clr-surface-2)',
+                            border: '1px solid var(--clr-border)',
+                            borderRadius: 999,
+                            padding: 4,
+                            gap: 4
+                        }}>
+                            <button
+                                type="button"
+                                onClick={() => setForm(f => ({ ...f, channel: f.channel === 'whatsapp' ? 'generic' : f.channel }))}
+                                style={{
+                                    border: 'none',
+                                    borderRadius: 999,
+                                    padding: '8px 18px',
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    background: !isWhatsApp ? 'var(--clr-surface)' : 'transparent',
+                                    color: !isWhatsApp ? 'var(--clr-text-1)' : 'var(--clr-text-3)',
+                                    boxShadow: !isWhatsApp ? 'var(--shadow-sm)' : 'none'
+                                }}
+                            >
+                                SMS
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setForm(f => ({ ...f, channel: 'whatsapp' }))}
+                                style={{
+                                    border: 'none',
+                                    borderRadius: 999,
+                                    padding: '8px 18px',
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    background: isWhatsApp ? 'var(--clr-surface)' : 'transparent',
+                                    color: isWhatsApp ? 'var(--clr-text-1)' : 'var(--clr-text-3)',
+                                    boxShadow: isWhatsApp ? 'var(--shadow-sm)' : 'none'
+                                }}
+                            >
+                                WhatsApp
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -159,14 +251,20 @@ export default function ComposePage() {
                     <div className="card">
                         <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 14 }}>Settings</div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                            <div className="form-group">
-                                <label className="form-label">Gateway Route</label>
-                                <select className="form-input" value={form.channel} onChange={e => setForm(f => ({ ...f, channel: e.target.value }))}>
-                                    <option value="generic">SMS (Generic/Promotional)</option>
-                                    <option value="dnd">SMS (DND/Transactional)</option>
-                                    <option value="whatsapp">WhatsApp</option>
-                                </select>
-                            </div>
+                            {!isWhatsApp ? (
+                                <div className="form-group">
+                                    <label className="form-label">SMS Route</label>
+                                    <select className="form-input" value={form.channel} onChange={e => setForm(f => ({ ...f, channel: e.target.value }))}>
+                                        <option value="generic">SMS (Generic/Promotional)</option>
+                                        <option value="dnd">SMS (DND/Transactional)</option>
+                                    </select>
+                                </div>
+                            ) : (
+                                <div className="form-group">
+                                    <label className="form-label">WhatsApp Route</label>
+                                    <input className="form-input" value="WhatsApp" readOnly />
+                                </div>
+                            )}
                             <div className="form-group">
                                 <label className="form-label">Sender ID / Mask</label>
                                 <select className="form-input" value={form.sender_id} onChange={e => setForm(f => ({ ...f, sender_id: e.target.value }))}>
@@ -199,7 +297,7 @@ export default function ComposePage() {
                             style={{ minHeight: 160 }}
                             value={form.message_body}
                             onChange={e => setForm(f => ({ ...f, message_body: e.target.value }))}
-                            placeholder={`Hello {{first_name}}, we have an exclusive offer for you!`}
+                            placeholder={isWhatsApp ? 'Hi {{first_name}}, this is your WhatsApp update.' : 'Hello {{first_name}}, we have an exclusive offer for you!'}
                             required
                         />
                         <CharCounter text={form.message_body} />
@@ -280,19 +378,123 @@ export default function ComposePage() {
                         </div>
                     ) : (
                         <div className="card">
-                            <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 14 }}>Target Numbers *</div>
+                            <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 14 }}>Audience *</div>
+                            <div className="form-group" style={{ marginBottom: 16 }}>
+                                <label className="form-label">Select Group(s)</label>
+                                <div style={{ position: 'relative' }} ref={groupDropdownRef}>
+                                    <div
+                                        className="form-input"
+                                        style={{
+                                            minHeight: 44,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            cursor: 'pointer'
+                                        }}
+                                        onClick={() => setShowGroupDropdown(v => !v)}
+                                    >
+                                        <span style={{ color: form.group_ids.length ? 'var(--clr-text-1)' : 'var(--clr-text-3)' }}>
+                                            {form.group_ids.length ? `${form.group_ids.length} group(s) selected` : 'Select groups'}
+                                        </span>
+                                        <ChevronDown size={16} style={{ color: 'var(--clr-text-3)' }} />
+                                    </div>
+                                    {showGroupDropdown && (
+                                        <div style={{
+                                            position: 'absolute',
+                                            top: 'calc(100% + 8px)',
+                                            left: 0,
+                                            right: 0,
+                                            border: '1px solid var(--clr-border)',
+                                            background: 'var(--clr-surface)',
+                                            borderRadius: 10,
+                                            zIndex: 30,
+                                            boxShadow: 'var(--shadow-md)',
+                                            padding: 10
+                                        }}>
+                                            <input
+                                                className="form-input"
+                                                value={groupSearch}
+                                                onChange={e => setGroupSearch(e.target.value)}
+                                                placeholder="Filter groups..."
+                                                autoFocus
+                                            />
+                                            <div style={{ marginTop: 8, maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                                {filteredGroups.length === 0 ? (
+                                                    <div style={{ fontSize: 12, color: 'var(--clr-text-3)', padding: '8px 4px' }}>
+                                                        No matching groups.
+                                                    </div>
+                                                ) : (
+                                                    filteredGroups.map(g => (
+                                                        <button
+                                                            key={g.id}
+                                                            type="button"
+                                                            className="btn btn-secondary"
+                                                            style={{
+                                                                justifyContent: 'space-between',
+                                                                width: '100%',
+                                                                padding: '8px 10px',
+                                                                fontWeight: 500
+                                                            }}
+                                                            onClick={() => toggleGroup(g.id)}
+                                                        >
+                                                            <span>{g.name}</span>
+                                                            <span style={{ fontSize: 12, color: 'var(--clr-text-3)' }}>{Number(g.contact_count || 0).toLocaleString()}</span>
+                                                        </button>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                                {selectedGroups.length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                                        {selectedGroups.map(group => (
+                                            <div
+                                                key={group.id}
+                                                style={{
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: 8,
+                                                    background: 'var(--clr-accent-dim)',
+                                                    border: '1px solid var(--clr-accent-glow)',
+                                                    color: 'var(--clr-accent)',
+                                                    fontSize: 12,
+                                                    borderRadius: 999,
+                                                    padding: '6px 10px'
+                                                }}
+                                            >
+                                                <span>{group.name}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggleGroup(group.id)}
+                                                    style={{
+                                                        display: 'inline-flex',
+                                                        border: 'none',
+                                                        background: 'transparent',
+                                                        color: 'inherit',
+                                                        cursor: 'pointer',
+                                                        padding: 0
+                                                    }}
+                                                >
+                                                    <X size={14} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                             <div className="form-group">
-                                <label className="form-label" style={{ display: 'block', marginBottom: '8px', fontSize: '12px' }}>Comma separated or new line isolated</label>
+                                <label className="form-label" style={{ display: 'block', marginBottom: '8px', fontSize: '12px' }}>Manual numbers (comma/new line)</label>
                                 <textarea
                                     className="form-textarea"
                                     style={{ fontFamily: 'monospace', minHeight: '120px' }}
                                     value={form.target_phones}
                                     onChange={e => setForm(f => ({ ...f, target_phones: e.target.value.replace(/[^0-9,\n\s]/g, '') }))}
                                     placeholder="e.g. 2348012345678, 2349012345678"
-                                    required={mode === 'instant'}
                                 />
-                                <div style={{ fontSize: 11, color: 'var(--clr-text-3)', marginTop: 8 }}>
-                                    Found ~{form.target_phones.split(/[,\s]+/).filter(Boolean).length} valid numbers
+                                <div style={{ fontSize: 11, color: 'var(--clr-text-3)', marginTop: 8, display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                                    <span>Manual unique: ~{uniqueManualPhoneCount.toLocaleString()} numbers</span>
+                                    <span>Groups selected: {form.group_ids.length} (~{selectedGroupContactCount.toLocaleString()} contacts)</span>
                                 </div>
                             </div>
                         </div>
@@ -322,7 +524,7 @@ export default function ComposePage() {
                     {/* Send Button */}
                     <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '14px' }} disabled={loading}>
                         {loading
-                            ? <><span className="spinner" style={{ width: 16, height: 16 }} /> {mode === 'campaign' ? 'Queuing...' : 'Sending...'}</>
+                            ? <><span className="spinner" style={{ width: 16, height: 16 }} /> {mode === 'campaign' ? 'Queuing...' : 'Queuing...'}</>
                             : <><Send size={16} /> {mode === 'instant' ? 'Send Instant Message' : form.sendMode === 'schedule' ? 'Schedule Campaign' : 'Send Campaign'}</>
                         }
                     </button>
