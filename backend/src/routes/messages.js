@@ -7,43 +7,104 @@ const { normalizePhone, isValidPhone } = require('../utils/phone');
 // POST /messages/send
 router.post('/send', requireAuth, async (req, res) => {
     try {
-        const { title, message_body, channel = 'generic', sender_id = null, message_type = 'plain', group_ids, contact_ids, scheduled_at } = req.body;
+        const {
+            title,
+            message_body,
+            per_group_messages,
+            channel = 'generic',
+            sender_id = null,
+            message_type = 'plain',
+            group_ids,
+            contact_ids,
+            scheduled_at
+        } = req.body;
 
-        if (!title || !message_body) {
+        const normalizedGroupMessages = Array.isArray(per_group_messages)
+            ? per_group_messages
+                .map((entry) => ({
+                    group_id: entry?.group_id,
+                    message_body: String(entry?.message_body || '').trim(),
+                }))
+                .filter((entry) => entry.group_id && entry.message_body)
+            : [];
+        const isMultiMessageCampaign = normalizedGroupMessages.length > 0;
+        const effectiveCampaignBody = isMultiMessageCampaign
+            ? (String(message_body || '').trim() || normalizedGroupMessages[0].message_body)
+            : String(message_body || '').trim();
+
+        if (!title || !effectiveCampaignBody) {
             return res.status(400).json({ error: 'title and message_body are required' });
         }
-        if ((!group_ids || !group_ids.length) && (!contact_ids || !contact_ids.length)) {
+        if (!isMultiMessageCampaign && (!group_ids || !group_ids.length) && (!contact_ids || !contact_ids.length)) {
             return res.status(400).json({ error: 'At least one group_id or contact_id is required' });
         }
-
-        // Resolve all unique contacts from groups + direct contact_ids
-        let contactQuery;
-        if (group_ids && group_ids.length > 0 && contact_ids && contact_ids.length > 0) {
-            contactQuery = await db.query(
-                `SELECT DISTINCT c.id, c.phone_number, c.first_name, c.last_name
-         FROM contacts c
-         WHERE c.opt_out = FALSE AND (
-           c.id IN (SELECT contact_id FROM contact_groups WHERE group_id = ANY($1::uuid[]))
-           OR c.id = ANY($2::uuid[])
-         )`,
-                [group_ids, contact_ids]
-            );
-        } else if (group_ids && group_ids.length > 0) {
-            contactQuery = await db.query(
-                `SELECT DISTINCT c.id, c.phone_number, c.first_name, c.last_name
-         FROM contacts c
-         JOIN contact_groups cg ON cg.contact_id = c.id
-         WHERE c.opt_out = FALSE AND cg.group_id = ANY($1::uuid[])`,
-                [group_ids]
-            );
-        } else {
-            contactQuery = await db.query(
-                `SELECT id, phone_number, first_name, last_name FROM contacts WHERE id = ANY($1::uuid[]) AND opt_out = FALSE`,
-                [contact_ids]
-            );
+        if (isMultiMessageCampaign && normalizedGroupMessages.length === 0) {
+            return res.status(400).json({ error: 'per_group_messages must include at least one group/message pair' });
         }
 
-        const contacts = contactQuery.rows;
+        let contacts = [];
+        if (isMultiMessageCampaign) {
+            const groupIds = normalizedGroupMessages.map((entry) => entry.group_id);
+            const groupMessageMap = new Map(normalizedGroupMessages.map((entry) => [entry.group_id, entry.message_body]));
+            const groupPriority = new Map(normalizedGroupMessages.map((entry, index) => [entry.group_id, index]));
+
+            const { rows } = await db.query(
+                `SELECT c.id, c.phone_number, c.first_name, c.last_name, cg.group_id
+                 FROM contacts c
+                 JOIN contact_groups cg ON cg.contact_id = c.id
+                 WHERE c.opt_out = FALSE AND cg.group_id = ANY($1::uuid[])`,
+                [groupIds]
+            );
+
+            const recipientsByContact = new Map();
+            rows.forEach((row) => {
+                const priority = groupPriority.get(row.group_id);
+                if (priority === undefined) return;
+
+                const existing = recipientsByContact.get(row.id);
+                if (!existing || priority < existing.priority) {
+                    recipientsByContact.set(row.id, {
+                        id: row.id,
+                        phone_number: row.phone_number,
+                        first_name: row.first_name,
+                        last_name: row.last_name,
+                        variantMessage: groupMessageMap.get(row.group_id),
+                        priority,
+                    });
+                }
+            });
+
+            contacts = [...recipientsByContact.values()];
+        } else {
+            let contactQuery;
+            if (group_ids && group_ids.length > 0 && contact_ids && contact_ids.length > 0) {
+                contactQuery = await db.query(
+                    `SELECT DISTINCT c.id, c.phone_number, c.first_name, c.last_name
+                     FROM contacts c
+                     WHERE c.opt_out = FALSE AND (
+                       c.id IN (SELECT contact_id FROM contact_groups WHERE group_id = ANY($1::uuid[]))
+                       OR c.id = ANY($2::uuid[])
+                     )`,
+                    [group_ids, contact_ids]
+                );
+            } else if (group_ids && group_ids.length > 0) {
+                contactQuery = await db.query(
+                    `SELECT DISTINCT c.id, c.phone_number, c.first_name, c.last_name
+                     FROM contacts c
+                     JOIN contact_groups cg ON cg.contact_id = c.id
+                     WHERE c.opt_out = FALSE AND cg.group_id = ANY($1::uuid[])`,
+                    [group_ids]
+                );
+            } else {
+                contactQuery = await db.query(
+                    `SELECT id, phone_number, first_name, last_name FROM contacts WHERE id = ANY($1::uuid[]) AND opt_out = FALSE`,
+                    [contact_ids]
+                );
+            }
+
+            contacts = contactQuery.rows;
+        }
+
         if (contacts.length === 0) {
             return res.status(400).json({ error: 'No eligible contacts found (check opt-out status)' });
         }
@@ -57,7 +118,7 @@ router.post('/send', requireAuth, async (req, res) => {
             const { rows: campaignRows } = await client.query(
                 `INSERT INTO campaigns (user_id, title, message_body, channel, scheduled_at, status)
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-                [req.user.id, title, message_body, channel, scheduled_at || null, scheduled_at ? 'queued' : 'processing']
+                [req.user.id, title, effectiveCampaignBody, channel, scheduled_at || null, scheduled_at ? 'queued' : 'processing']
             );
             campaign = campaignRows[0];
 
@@ -75,7 +136,8 @@ router.post('/send', requireAuth, async (req, res) => {
             // Build queue jobs
             const jobs = contacts.map((c, idx) => {
                 // Replace template variables
-                const personalizedBody = message_body
+                const sourceMessage = isMultiMessageCampaign ? c.variantMessage : effectiveCampaignBody;
+                const personalizedBody = sourceMessage
                     .replace(/\{\{first_name\}\}/gi, c.first_name || '')
                     .replace(/\{\{last_name\}\}/gi, c.last_name || '')
                     .replace(/\{\{phone\}\}/gi, c.phone_number);
