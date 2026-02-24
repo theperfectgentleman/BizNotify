@@ -61,9 +61,10 @@ export default function CampaignItemsPage() {
     const [showCreateMessage, setShowCreateMessage] = useState(false);
     const [saving, setSaving] = useState(false);
     const [showCampaignDropdown, setShowCampaignDropdown] = useState(false);
-    const [showCampaignForm, setShowCampaignForm] = useState(true);
+    const [showCampaignForm, setShowCampaignForm] = useState(false); // Default to collapsed
     const [campaignSearch, setCampaignSearch] = useState('');
     const campaignDropdownRef = useRef(null);
+    const campaignCardRef = useRef(null);
 
     const [campaignMode, setCampaignMode] = useState('edit'); // edit | create
     const [campaignForm, setCampaignForm] = useState({
@@ -361,178 +362,398 @@ export default function CampaignItemsPage() {
                             Orchestrate multi-channel messaging flows for your audience.
                         </p>
                     </div>
-                    
-                    <div style={{ display: 'flex', gap: 10 }}>
-                        {campaignMode === 'edit' && (
-                            <button 
-                                className="btn btn-secondary" 
-                                onClick={startNewCampaign}
-                            >
-                                <PlusCircle size={16} style={{ marginRight: 6 }} /> New Campaign
-                            </button>
-                        )}
-                    </div>
                 </div>
             </div>
 
             {/* Main Layout Grid */}
             <div className="campaign-layout">
                 
-                {/* ── LEFT COLUMN: CAMPAIGN SETTINGS ── */}
-                <div className="campaign-sidebar scroll-y">
+                {/* ── LEFT COLUMN: WORKSPACE (Campaign + Message Editor) ── */}
+                <div className="campaign-sidebar scroll-y" style={{ position: 'relative' }}>
                     
-                    {/* Settings Panel */}
-                    <div className="panel-card">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                            <h3 style={{ fontSize: 16, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <LayoutTemplate size={18} style={{ color: 'var(--clr-accent)' }} /> 
-                                Campaign Settings
-                            </h3>
-                            {/* Campaign Switcher */}
-                            {campaigns.length > 0 && (
-                                <div style={{ position: 'relative' }} ref={campaignDropdownRef}>
-                                    <button
-                                        type="button"
-                                        className="btn btn-ghost btn-sm"
-                                        onClick={() => setShowCampaignDropdown(!showCampaignDropdown)}
-                                        disabled={campaignMode === 'create'}
-                                        style={{ color: 'var(--clr-text-2)' }}
-                                    >
-                                        Switch <ChevronDown size={14} style={{ marginLeft: 4 }} />
-                                    </button>
-                                    
-                                    {showCampaignDropdown && (
-                                        <div style={{
-                                            position: 'absolute', top: '100%', right: 0, width: 260,
-                                            background: 'var(--clr-surface)', border: '1px solid var(--clr-border)',
-                                            borderRadius: 12, boxShadow: 'var(--shadow-lg)', zIndex: 50, padding: 8
-                                        }}>
-                                            <input
-                                                className="form-input"
-                                                style={{ fontSize: 13, height: 36, marginBottom: 8 }}
-                                                value={campaignSearch}
-                                                onChange={(e) => setCampaignSearch(e.target.value)}
-                                                placeholder="Find campaign..."
-                                                autoFocus
-                                            />
-                                            <div style={{ maxHeight: 200, overflowY: 'auto' }}>
-                                                {filteredCampaigns.map(c => (
-                                                    <button 
-                                                        key={c.id} 
-                                                        className="btn btn-ghost btn-sm" 
-                                                        style={{ width: '100%', justifyContent: 'flex-start', textAlign: 'left' }}
-                                                        onClick={() => selectCampaign(c.id)}
-                                                    >
-                                                        {c.title}
-                                                    </button>
-                                                ))}
-                                            </div>
+                    {/* Campaign Card - Collapsible & Floating */}
+                    <div 
+                        ref={campaignCardRef}
+                        className="panel-card"
+                        style={{ 
+                            marginBottom: 20, 
+                            cursor: !showCampaignForm ? 'pointer' : 'default',
+                            position: showCampaignForm ? 'absolute' : 'relative',
+                            top: 0, left: 0, right: 0,
+                            zIndex: 20,
+                            boxShadow: showCampaignForm ? '0 10px 40px -10px rgba(0,0,0,0.2)' : 'var(--shadow-card)',
+                            border: showCampaignForm ? '1px solid var(--clr-accent-glow)' : '1px solid var(--clr-border)',
+                            transition: 'all 0.2s ease-in-out'
+                        }}
+                        onClick={(e) => {
+                            // Don't expand if clicking buttons/inputs
+                            if (['BUTTON', 'INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+                            if (!showCampaignForm) setShowCampaignForm(true);
+                        }}
+                    >
+                        {/* Header Section */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: showCampaignForm ? 16 : 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{ 
+                                    width: 32, height: 32, borderRadius: 8, 
+                                    background: 'var(--clr-accent-dim)', color: 'var(--clr-accent)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}>
+                                    <LayoutTemplate size={18} />
+                                </div>
+                                <div>
+                                    <h3 style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2 }}>
+                                        {campaignForm.title || 'Untitled Campaign'}
+                                    </h3>
+                                    {!showCampaignForm && (
+                                        <div style={{ fontSize: 12, color: 'var(--clr-text-3)' }}>
+                                            {campaignForm.start_date ? new Date(campaignForm.start_date).toLocaleDateString() : 'No date'} • {campaignForm.target_reach || '0'} users
                                         </div>
                                     )}
                                 </div>
-                            )}
-                        </div>
-
-                        <div className="floating-input-group">
-                            <label>Campaign Title</label>
-                            <input
-                                className="form-input"
-                                value={campaignForm.title}
-                                onChange={(e) => setCampaignForm(prev => ({ ...prev, title: e.target.value }))}
-                                placeholder="e.g. Black Friday Sale"
-                            />
-                        </div>
-
-                        <div className="floating-input-group">
-                            <label>Description</label>
-                            <textarea
-                                className="form-textarea"
-                                style={{ minHeight: 80, resize: 'none' }}
-                                value={campaignForm.description}
-                                onChange={(e) => setCampaignForm(prev => ({ ...prev, description: e.target.value }))}
-                                placeholder="Internal notes about this campaign strategy..."
-                            />
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                            <div className="floating-input-group">
-                                <label>Start Date</label>
-                                <input
-                                    type="date"
-                                    className="form-input"
-                                    value={campaignForm.start_date}
-                                    onChange={(e) => setCampaignForm(prev => ({ ...prev, start_date: e.target.value }))}
-                                />
                             </div>
-                            <div className="floating-input-group">
-                                <label>End Date</label>
-                                <input
-                                    type="date"
-                                    className="form-input"
-                                    value={campaignForm.end_date}
-                                    onChange={(e) => setCampaignForm(prev => ({ ...prev, end_date: e.target.value }))}
-                                />
+
+                            <div style={{ display: 'flex', gap: 4 }}>
+                                {showCampaignForm ? (
+                                    <button 
+                                        className="btn btn-ghost btn-sm"
+                                        onClick={(e) => { e.stopPropagation(); setShowCampaignForm(false); }}
+                                    >
+                                        <ChevronDown size={16} style={{ transform: 'rotate(180deg)' }} />
+                                    </button>
+                                ) : (
+                                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                        {campaignMode === 'edit' && (
+                                            <>
+                                                 <button 
+                                                    className="btn btn-ghost btn-sm" 
+                                                    onClick={(e) => { e.stopPropagation(); startNewCampaign(); setShowCampaignForm(true); }}
+                                                    title="Create New Campaign"
+                                                    style={{ padding: 6, height: 28, width: 28, justifyContent: 'center', color: 'var(--clr-text-2)' }}
+                                                >
+                                                    <PlusCircle size={16} />
+                                                </button>
+                                                
+                                                {/* Switcher in collapsed view */}
+                                                {campaigns.length > 0 && (
+                                                    <div style={{ position: 'relative' }} ref={campaignDropdownRef} onClick={e => e.stopPropagation()}>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-ghost btn-sm"
+                                                            onClick={() => setShowCampaignDropdown(!showCampaignDropdown)}
+                                                            style={{ color: 'var(--clr-text-2)' }}
+                                                        >
+                                                            Switch <ChevronDown size={14} style={{ marginLeft: 4 }} />
+                                                        </button>
+                                                        {showCampaignDropdown && (
+                                                            <div style={{
+                                                                position: 'absolute', top: '100%', right: 0, width: 260,
+                                                                background: 'var(--clr-surface)', border: '1px solid var(--clr-border)',
+                                                                borderRadius: 12, boxShadow: 'var(--shadow-lg)', zIndex: 50, padding: 8
+                                                            }}>
+                                                                <input
+                                                                    className="form-input"
+                                                                    style={{ fontSize: 13, height: 36, marginBottom: 8 }}
+                                                                    value={campaignSearch}
+                                                                    onChange={(e) => setCampaignSearch(e.target.value)}
+                                                                    placeholder="Find campaign..."
+                                                                    autoFocus
+                                                                />
+                                                                <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                                                                    {filteredCampaigns.map(c => (
+                                                                        <button 
+                                                                            key={c.id} 
+                                                                            className="btn btn-ghost btn-sm" 
+                                                                            style={{ width: '100%', justifyContent: 'flex-start', textAlign: 'left' }}
+                                                                            onClick={() => { selectCampaign(c.id); setShowCampaignDropdown(false); }}
+                                                                        >
+                                                                            {c.title}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                        <button className="btn btn-ghost btn-sm" style={{ color: 'var(--clr-text-3)' }}>
+                                            <Edit3 size={14} />
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
-                        <div className="floating-input-group">
-                            <label>Target Audience Reach</label>
-                            <div style={{ position: 'relative' }}>
-                                <Users size={16} style={{ position: 'absolute', left: 12, top: 12, color: 'var(--clr-text-3)' }} />
-                                <input
-                                    className="form-input"
-                                    style={{ paddingLeft: 36 }}
-                                    value={campaignForm.target_reach}
-                                    onChange={(e) => setCampaignForm(prev => ({ ...prev, target_reach: e.target.value }))}
-                                    placeholder="Est. number of users"
-                                />
+                        {/* Collapsed Description Preview */}
+                        {!showCampaignForm && campaignForm.description && (
+                            <div style={{ fontSize: 13, color: 'var(--clr-text-2)', lineHeight: 1.5, marginTop: 4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                {campaignForm.description}
                             </div>
-                        </div>
+                        )}
 
-                        <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--clr-border)' }}>
-                            <button 
-                                className="btn btn-primary" 
-                                style={{ width: '100%', justifyContent: 'center' }}
-                                onClick={saveCampaign}
-                                disabled={saving}
-                            >
-                                {saving ? <span className="spinner" /> : <Save size={16} style={{ marginRight: 8 }} />}
-                                {campaignMode === 'create' ? 'Create Campaign' : 'Save Changes'}
-                            </button>
-                        </div>
-                    </div>
+                        {/* Expanded Form */}
+                        {showCampaignForm && (
+                            <div className="campaign-form-expanded animate-fade-in">
+                                <div className="floating-input-group">
+                                    <label>Campaign Title</label>
+                                    <input
+                                        className="form-input"
+                                        value={campaignForm.title}
+                                        onChange={(e) => setCampaignForm(prev => ({ ...prev, title: e.target.value }))}
+                                        placeholder="e.g. Black Friday Sale"
+                                        autoFocus
+                                    />
+                                </div>
 
-                    {/* Selected Message Preview Panel */}
-                    {selectedItem && (
-                         <div className="panel-card" style={{ borderLeft: '4px solid var(--clr-accent)' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                <h4 style={{ fontSize: 14, fontWeight: 600, color: 'var(--clr-text-2)' }}>Selected Message</h4>
-                                <StatusBadge status={selectedItem.status} />
-                            </div>
-                            
-                            <div style={{ marginBottom: 12 }}>
-                                <div style={{ fontSize: 11, color: 'var(--clr-text-3)', textTransform: 'uppercase', marginBottom: 4 }}>Subject</div>
-                                <div style={{ fontWeight: 500 }}>{selectedItem.title || 'Untitled Message'}</div>
-                            </div>
-                            
-                            <div style={{ marginBottom: 12 }}>
-                                <div style={{ fontSize: 11, color: 'var(--clr-text-3)', textTransform: 'uppercase', marginBottom: 4 }}>Content</div>
-                                <div style={{ background: 'var(--clr-surface-2)', padding: 12, borderRadius: 8, fontSize: 13, lineHeight: 1.5, color: 'var(--clr-text-2)' }}>
-                                    {selectedItem.message_body}
+                                <div className="floating-input-group">
+                                    <label>Description</label>
+                                    <textarea
+                                        className="form-textarea"
+                                        style={{ minHeight: 80, resize: 'none' }}
+                                        value={campaignForm.description}
+                                        onChange={(e) => setCampaignForm(prev => ({ ...prev, description: e.target.value }))}
+                                        placeholder="Internal notes about this campaign strategy..."
+                                    />
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                    <div className="floating-input-group">
+                                        <label>Start Date</label>
+                                        <input
+                                            type="date"
+                                            className="form-input"
+                                            value={campaignForm.start_date}
+                                            onChange={(e) => setCampaignForm(prev => ({ ...prev, start_date: e.target.value }))}
+                                        />
+                                    </div>
+                                    <div className="floating-input-group">
+                                        <label>End Date</label>
+                                        <input
+                                            type="date"
+                                            className="form-input"
+                                            value={campaignForm.end_date}
+                                            onChange={(e) => setCampaignForm(prev => ({ ...prev, end_date: e.target.value }))}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="floating-input-group">
+                                    <label>Target Audience Reach</label>
+                                    <div style={{ position: 'relative' }}>
+                                        <Users size={16} style={{ position: 'absolute', left: 12, top: 12, color: 'var(--clr-text-3)' }} />
+                                        <input
+                                            className="form-input"
+                                            style={{ paddingLeft: 36 }}
+                                            value={campaignForm.target_reach}
+                                            onChange={(e) => setCampaignForm(prev => ({ ...prev, target_reach: e.target.value }))}
+                                            placeholder="Est. number of users"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--clr-border)', display: 'flex', gap: 10 }}>
+                                    <button 
+                                        className="btn btn-primary" 
+                                        style={{ flex: 1, justifyContent: 'center' }}
+                                        onClick={(e) => { saveCampaign(); setShowCampaignForm(false); }}
+                                        disabled={saving}
+                                    >
+                                        {saving ? <span className="spinner" /> : <Save size={16} style={{ marginRight: 8 }} />}
+                                        Save Changes
+                                    </button>
                                 </div>
                             </div>
-                            
-                            <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--clr-text-3)' }}>
-                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    <Clock3 size={12} /> {new Date(selectedItem.scheduled_at).toLocaleDateString()}
-                                </span>
-                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    {selectedItem.channel === 'whatsapp' ? <MessageCircle size={12} /> : <Smartphone size={12} />}
-                                    {selectedItem.channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}
-                                </span>
-                            </div>
-                         </div>
-                    )}
+                        )}
+                    </div>
+                
+                    {/* Message Editor / Preview Card */}
+                    <div className="panel-card" style={{ height: 'calc(100% - 100px)', display: 'flex', flexDirection: 'column' }}>
+                         {/* Header */}
+                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottom: '1px solid var(--clr-border)', paddingBottom: 16 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <div style={{ 
+                                        width: 32, height: 32, borderRadius: 8, 
+                                        background: 'var(--clr-surface-2)', color: 'var(--clr-text-2)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                                    }}>
+                                        <MessageSquare size={18} />
+                                    </div>
+                                    <h3 style={{ fontSize: 16, fontWeight: 700 }}>
+                                        {showCreateMessage ? 'Drafting Message' : (selectedItem ? 'Message Details' : 'Message Workspace')}
+                                    </h3>
+                                </div>
+                                {selectedItem && !showCreateMessage && (
+                                    <StatusBadge status={selectedItem.status} />
+                                )}
+                        </div>
+
+                        {/* CONTENT AREA: Either Form or Read-only View */}
+                        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4 }}>
+                            {showCreateMessage ? (
+                                <form onSubmit={createItem}>
+                                    <div style={{ marginBottom: 20 }}>
+                                        <label className="form-label" style={{ fontSize: 12, marginBottom: 8 }}>Channel</label>
+                                        <div className="channel-selector" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                            <button
+                                                type="button"
+                                                onClick={() => setCreateForm(prev => ({ ...prev, channel: 'generic' }))}
+                                                style={{ 
+                                                    padding: '12px', borderRadius: 8, border: '1px solid',
+                                                    borderColor: createForm.channel !== 'whatsapp' ? 'var(--clr-accent)' : 'var(--clr-border)',
+                                                    background: createForm.channel !== 'whatsapp' ? 'var(--clr-accent-dim)' : 'var(--clr-surface)',
+                                                    color: createForm.channel !== 'whatsapp' ? 'var(--clr-accent)' : 'var(--clr-text-2)',
+                                                    fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                                                    transition: 'all 0.2s'
+                                                }}
+                                            >
+                                                <Smartphone size={18} /> SMS
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setCreateForm(prev => ({ ...prev, channel: 'whatsapp' }))}
+                                                style={{ 
+                                                    padding: '12px', borderRadius: 8, border: '1px solid',
+                                                    borderColor: createForm.channel === 'whatsapp' ? 'var(--clr-accent)' : 'var(--clr-border)',
+                                                    background: createForm.channel === 'whatsapp' ? 'var(--clr-accent-dim)' : 'var(--clr-surface)',
+                                                    color: createForm.channel === 'whatsapp' ? 'var(--clr-accent)' : 'var(--clr-text-2)',
+                                                    fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                                                    transition: 'all 0.2s'
+                                                }}
+                                            >
+                                                <MessageCircle size={18} /> WhatsApp
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="floating-input-group">
+                                        <label>Internal Title</label>
+                                        <input
+                                            className="form-input"
+                                            value={createForm.title}
+                                            onChange={(e) => setCreateForm(prev => ({ ...prev, title: e.target.value }))}
+                                            placeholder="e.g. Day 1 Reminder"
+                                        />
+                                    </div>
+
+                                    <div className="floating-input-group">
+                                        <label>Schedule Delivery</label>
+                                        <input
+                                            type="datetime-local"
+                                            className="form-input"
+                                            value={createForm.scheduled_at}
+                                            onChange={(e) => setCreateForm(prev => ({ ...prev, scheduled_at: e.target.value }))}
+                                            required
+                                        />
+                                    </div>
+
+                                    <div style={{ marginBottom: 20 }}>
+                                        <label className="form-label" style={{ fontSize: 12, marginBottom: 8 }}>Target Audience</label>
+                                        <div style={{ 
+                                            display: 'grid', gridTemplateColumns: '1fr', gap: 8, 
+                                            maxHeight: 140, overflowY: 'auto', padding: 8, 
+                                            border: '1px solid var(--clr-border)', borderRadius: 8, background: 'var(--clr-surface-2)' 
+                                        }}>
+                                            {groups.map(g => (
+                                                <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, cursor: 'pointer', padding: 4 }}>
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={createForm.group_ids.includes(g.id)}
+                                                        onChange={() => toggleGroup(g.id)}
+                                                        style={{ accentColor: 'var(--clr-accent)', width: 16, height: 16 }}
+                                                    />
+                                                    {g.name}
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div style={{ marginBottom: 20 }}>
+                                        <label className="form-label" style={{ fontSize: 12, marginBottom: 8 }}>Content</label>
+                                        <textarea
+                                            className="form-textarea"
+                                            value={createForm.message_body}
+                                            onChange={(e) => setCreateForm(prev => ({ ...prev, message_body: e.target.value }))}
+                                            placeholder="Message content..."
+                                            required
+                                            style={{ minHeight: 140, fontSize: 14 }}
+                                        />
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: 10, marginTop: 'auto' }}>
+                                        <button 
+                                            type="button" 
+                                            className="btn btn-ghost" 
+                                            style={{ flex: 1 }}
+                                            onClick={() => setShowCreateMessage(false)}
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button type="submit" className="btn btn-primary" style={{ flex: 2, justifyContent: 'center' }} disabled={saving}>
+                                            {saving ? 'Saving...' : 'Schedule Message'} <CalendarPlus size={16} style={{ marginLeft: 6 }} />
+                                        </button>
+                                    </div>
+                                </form>
+                            ) : selectedItem ? (
+                                <div className="animate-fade-in">
+                                     <div style={{ marginBottom: 24 }}>
+                                        <div style={{ fontSize: 11, color: 'var(--clr-text-3)', textTransform: 'uppercase', marginBottom: 6 }}>Overview</div>
+                                        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>{selectedItem.title || 'Untitled'}</div>
+                                        <div style={{ display: 'flex', gap: 12, fontSize: 13, color: 'var(--clr-text-2)' }}>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <Clock3 size={14} /> {new Date(selectedItem.scheduled_at).toLocaleString()}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+                                        <div style={{ padding: 12, background: 'var(--clr-surface-2)', borderRadius: 10 }}>
+                                            <div style={{ fontSize: 11, color: 'var(--clr-text-3)', marginBottom: 4 }}>Channel</div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                                                 {selectedItem.channel === 'whatsapp' ? <MessageCircle size={16} /> : <Smartphone size={16} />}
+                                                 {selectedItem.channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}
+                                            </div>
+                                        </div>
+                                        <div style={{ padding: 12, background: 'var(--clr-surface-2)', borderRadius: 10 }}>
+                                            <div style={{ fontSize: 11, color: 'var(--clr-text-3)', marginBottom: 4 }}>Audience</div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                                                 <Users size={16} /> {selectedItem.group_ids?.length || 1} Groups
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ marginBottom: 20 }}>
+                                        <div style={{ fontSize: 11, color: 'var(--clr-text-3)', textTransform: 'uppercase', marginBottom: 8 }}>Message Body</div>
+                                        <div style={{ 
+                                            background: 'var(--clr-surface-3)', padding: 16, borderRadius: 12, 
+                                            fontSize: 14, lineHeight: 1.6, color: 'var(--clr-text)', whiteSpace: 'pre-wrap'
+                                        }}>
+                                            {selectedItem.message_body}
+                                        </div>
+                                    </div>
+
+                                    <div style={{ marginTop: 40, paddingTop: 20, borderTop: '1px solid var(--clr-border)' }}>
+                                        <button className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }} disabled>
+                                            <Edit3 size={16} style={{ marginRight: 8 }} /> Edit Configuration
+                                        </button>
+                                        <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--clr-text-3)', marginTop: 8 }}>
+                                            Adjustments disabled for {selectedItem.status} messages.
+                                        </p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--clr-text-3)', textAlign: 'center', padding: 20 }}>
+                                    <div style={{ width: 48, height: 48, borderRadius: 24, background: 'var(--clr-surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+                                        <LayoutTemplate size={24} />
+                                    </div>
+                                    <p style={{ maxWidth: 200 }}>Select a message from the timeline to view details, or draft a new one.</p>
+                                    <button className="btn btn-primary btn-sm" onClick={() => setShowCreateMessage(true)} style={{ marginTop: 16 }}>
+                                        Draft New Message
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
 
 
@@ -566,8 +787,13 @@ export default function CampaignItemsPage() {
                                 <BarChart3 size={20} style={{ color: 'var(--clr-accent)' }} /> 
                                 Campaign Timeline
                             </h3>
-                            <div style={{ fontSize: 13, color: 'var(--clr-text-3)' }}>
-                                {items.length} touchpoints defined
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <div style={{ fontSize: 13, color: 'var(--clr-text-3)' }}>
+                                    {items.length} touchpoints
+                                </div>
+                                <button className="btn btn-secondary btn-sm" onClick={() => setShowCreateMessage(true)}>
+                                    <PlusCircle size={14} style={{ marginRight: 4 }} /> Add
+                                </button>
                             </div>
                         </div>
 
@@ -598,7 +824,10 @@ export default function CampaignItemsPage() {
                                         </div>
                                         <div 
                                             className={`timeline-card ${isActive ? 'active' : ''}`}
-                                            onClick={() => setSelectedItemId(item.id)}
+                                            onClick={() => {
+                                                setSelectedItemId(item.id);
+                                                setShowCreateMessage(false);
+                                            }}
                                         >
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                                 <div>
@@ -641,133 +870,6 @@ export default function CampaignItemsPage() {
                                 );
                             })}
                         </div>
-                        
-                        {/* Add New Step Form or Button */}
-                        {showCreateMessage ? (
-                             <div className="timeline-node" style={{ marginBottom: 0 }}>
-                                <div className="timeline-marker active" style={{ background: 'var(--clr-accent)', borderColor: 'var(--clr-accent)', color: 'white' }}>
-                                    <PlusCircle size={14} />
-                                </div>
-                                <form 
-                                    className="timeline-card active" 
-                                    style={{ border: '2px solid var(--clr-accent)', background: 'var(--clr-surface-2)' }}
-                                    onSubmit={createItem}
-                                >
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-                                        <h4 style={{ fontSize: 15, fontWeight: 700 }}>Drafting New Message</h4>
-                                        <button 
-                                            type="button" 
-                                            className="btn btn-ghost btn-sm" 
-                                            onClick={() => setShowCreateMessage(false)}
-                                            style={{ height: 24, padding: '0 8px' }}
-                                        >
-                                            Cancel
-                                        </button>
-                                    </div>
-                                    
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-                                        <div className="floating-input-group">
-                                            <label>Message Title (Internal)</label>
-                                            <input
-                                                className="form-input"
-                                                value={createForm.title}
-                                                onChange={(e) => setCreateForm(prev => ({ ...prev, title: e.target.value }))}
-                                                placeholder="e.g. Welcome Series - Day 1"
-                                                autoFocus
-                                            />
-                                        </div>
-                                        <div className="floating-input-group">
-                                            <label>Schedule Time *</label>
-                                            <input
-                                                type="datetime-local"
-                                                className="form-input"
-                                                value={createForm.scheduled_at}
-                                                onChange={(e) => setCreateForm(prev => ({ ...prev, scheduled_at: e.target.value }))}
-                                                required
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div style={{ marginBottom: 16 }}>
-                                        <label className="form-label" style={{ fontSize: 12, marginBottom: 8 }}>Channel Selection</label>
-                                        <div className="channel-selector" style={{ display: 'flex', gap: 12 }}>
-                                            <button
-                                                type="button"
-                                                onClick={() => setCreateForm(prev => ({ ...prev, channel: 'generic' }))}
-                                                style={{ 
-                                                    flex: 1, padding: '10px', borderRadius: 8, border: '1px solid',
-                                                    borderColor: createForm.channel !== 'whatsapp' ? 'var(--clr-accent)' : 'var(--clr-border)',
-                                                    background: createForm.channel !== 'whatsapp' ? 'var(--clr-accent-dim)' : 'var(--clr-surface)',
-                                                    color: createForm.channel !== 'whatsapp' ? 'var(--clr-accent)' : 'var(--clr-text-2)',
-                                                    fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8
-                                                }}
-                                            >
-                                                <Smartphone size={16} /> SMS
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setCreateForm(prev => ({ ...prev, channel: 'whatsapp' }))}
-                                                style={{ 
-                                                    flex: 1, padding: '10px', borderRadius: 8, border: '1px solid',
-                                                    borderColor: createForm.channel === 'whatsapp' ? 'var(--clr-accent)' : 'var(--clr-border)',
-                                                    background: createForm.channel === 'whatsapp' ? 'var(--clr-accent-dim)' : 'var(--clr-surface)',
-                                                    color: createForm.channel === 'whatsapp' ? 'var(--clr-accent)' : 'var(--clr-text-2)',
-                                                    fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8
-                                                }}
-                                            >
-                                                <MessageCircle size={16} /> WhatsApp
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <div style={{ marginBottom: 16 }}>
-                                        <label className="form-label" style={{ fontSize: 12, marginBottom: 8 }}>Target Groups *</label>
-                                        <div style={{ 
-                                            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8, 
-                                            maxHeight: 120, overflowY: 'auto', padding: 10, 
-                                            border: '1px solid var(--clr-border)', borderRadius: 8, background: 'var(--clr-surface)' 
-                                        }}>
-                                            {groups.map(g => (
-                                                <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={createForm.group_ids.includes(g.id)}
-                                                        onChange={() => toggleGroup(g.id)}
-                                                        style={{ accentColor: 'var(--clr-accent)' }}
-                                                    />
-                                                    {g.name}
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <div style={{ marginBottom: 20 }}>
-                                        <label className="form-label" style={{ fontSize: 12, marginBottom: 8 }}>Message Body *</label>
-                                        <textarea
-                                            className="form-textarea"
-                                            value={createForm.message_body}
-                                            onChange={(e) => setCreateForm(prev => ({ ...prev, message_body: e.target.value }))}
-                                            placeholder="Hello {{first_name}}, ensure to bring your ID..."
-                                            required
-                                            style={{ minHeight: 100 }}
-                                        />
-                                    </div>
-
-                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-                                        <button type="submit" className="btn btn-primary" disabled={saving}>
-                                            {saving ? 'Saving...' : 'Add to Schedule'} <CalendarPlus size={16} style={{ marginLeft: 6 }} />
-                                        </button>
-                                    </div>
-                                </form>
-                             </div>
-                        ) : (
-                            campaignMode === 'edit' && (
-                                <button className="btn-add-step" onClick={() => setShowCreateMessage(true)}>
-                                    <PlusCircle size={18} /> Add Timeline Step
-                                </button>
-                            )
-                        )}
-                        
                     </div>
                 </div>
             </div>

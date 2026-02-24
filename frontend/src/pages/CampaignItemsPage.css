@@ -11,7 +11,7 @@
 
 .campaign-layout {
   display: grid;
-  grid-template-columns: 380px 1fr; /* Fixed sidebar width */
+  grid-template-columns: 45% 1fr; /* Wider left column as requested */
   gap: 24px;
   flex: 1;
   min-height: 0; /* Necessary for nested scrolling */
