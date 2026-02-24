@@ -11,7 +11,7 @@
 
 .campaign-layout {
   display: grid;
-  grid-template-columns: 45% 1fr; /* Wider left column as requested */
+  grid-template-columns: 55% 1fr; /* Expanded left column (was 45%) */
   gap: 24px;
   flex: 1;
   min-height: 0; /* Necessary for nested scrolling */

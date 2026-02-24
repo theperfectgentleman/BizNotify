@@ -6,7 +6,7 @@ import PropTypes from 'prop-types';
 import { 
     ArrowLeft, CalendarPlus, Edit3, Save, Clock3, MessageSquare, 
     Users, ChevronRight, ChevronDown, PlusCircle, LayoutTemplate, 
-    Send, Smartphone, MessageCircle, BarChart3, AlertCircle, CheckCircle2 
+    Send, Smartphone, MessageCircle, BarChart3, AlertCircle, CheckCircle2, Copy, X
 } from 'lucide-react';
 import './CampaignItemsPage.css';
 
@@ -65,6 +65,7 @@ export default function CampaignItemsPage() {
     const [campaignSearch, setCampaignSearch] = useState('');
     const campaignDropdownRef = useRef(null);
     const campaignCardRef = useRef(null);
+    const audienceInputRef = useRef(null);
 
     const [campaignMode, setCampaignMode] = useState('edit'); // edit | create
     const [campaignForm, setCampaignForm] = useState({
@@ -81,6 +82,7 @@ export default function CampaignItemsPage() {
         message_body: '',
         scheduled_at: '',
         group_ids: [],
+        adhoc_numbers: [],
         channel: 'generic',
         message_type: 'plain',
     });
@@ -298,11 +300,18 @@ export default function CampaignItemsPage() {
                 channel: createForm.channel,
             });
             toast.success('Scheduled message created');
-            setCreateForm({ title: '', message_body: '', scheduled_at: '', group_ids: [], channel: 'generic', message_type: 'plain' });
+            setCreateForm({ 
+                title: '', 
+                message_body: '', 
+                scheduled_at: '', 
+                group_ids: [], 
+                adhoc_numbers: [], // New field for comma-separated numbers
+                channel: 'generic', 
+                message_type: 'plain' 
+            });
             setShowCreateMessage(false);
             await loadCampaignItems(selectedCampaignId);
-        } catch (err) {
-            toast.error(err.response?.data?.error || 'Failed to create schedule item');
+        } catch (err) {            toast.error(err.response?.data?.error || 'Failed to create schedule item');
         } finally {
             setSaving(false);
         }
@@ -569,23 +578,46 @@ export default function CampaignItemsPage() {
                 
                     {/* Message Editor / Preview Card */}
                     <div className="panel-card" style={{ height: 'calc(100% - 100px)', display: 'flex', flexDirection: 'column' }}>
-                         {/* Header */}
-                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottom: '1px solid var(--clr-border)', paddingBottom: 16 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <div style={{ 
-                                        width: 32, height: 32, borderRadius: 8, 
-                                        background: 'var(--clr-surface-2)', color: 'var(--clr-text-2)',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center' 
-                                    }}>
-                                        <MessageSquare size={18} />
-                                    </div>
-                                    <h3 style={{ fontSize: 16, fontWeight: 700 }}>
-                                        {showCreateMessage ? 'Drafting Message' : (selectedItem ? 'Message Details' : 'Message Workspace')}
-                                    </h3>
+                        {/* Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottom: '1px solid var(--clr-border)', paddingBottom: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{ 
+                                    width: 32, height: 32, borderRadius: 8, 
+                                    background: 'var(--clr-surface-2)', color: 'var(--clr-text-2)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                                }}>
+                                    <MessageSquare size={18} />
                                 </div>
-                                {selectedItem && !showCreateMessage && (
-                                    <StatusBadge status={selectedItem.status} />
-                                )}
+                                <h3 style={{ fontSize: 16, fontWeight: 700 }}>
+                                    {showCreateMessage ? 'Drafting Message' : (selectedItem ? 'Message Details' : 'Message Workspace')}
+                                </h3>
+                            </div>
+                            
+                                            <div style={{ display: 'flex', gap: 8 }}>
+                                                {!showCreateMessage && (
+                                                    <button 
+                                                        className="btn btn-primary btn-sm"
+                                                        onClick={() => {
+                                                            setSelectedItemId(null);
+                                                            setCreateForm({
+                                                                title: '',
+                                                                scheduled_at: '',
+                                                                message_body: '',
+                                                                channel: 'sms',
+                                                                group_ids: [],
+                                                                adhoc_numbers: []
+                                                            });
+                                                            setShowCreateMessage(true);
+                                                        }}
+                                                        title="Draft New Message"
+                                                    >
+                                                        <PlusCircle size={16} style={{ marginRight: 6 }} /> New Message
+                                                    </button>
+                                                )}
+                                                {selectedItem && !showCreateMessage && (
+                                                    <StatusBadge status={selectedItem.status} />
+                                                )}
+                                            </div>
                         </div>
 
                         {/* CONTENT AREA: Either Form or Read-only View */}
@@ -648,23 +680,114 @@ export default function CampaignItemsPage() {
                                     </div>
 
                                     <div style={{ marginBottom: 20 }}>
-                                        <label className="form-label" style={{ fontSize: 12, marginBottom: 8 }}>Target Audience</label>
+                                        
+                                        {/* Multi-select Dropdown & Input */}
                                         <div style={{ 
-                                            display: 'grid', gridTemplateColumns: '1fr', gap: 8, 
-                                            maxHeight: 140, overflowY: 'auto', padding: 8, 
-                                            border: '1px solid var(--clr-border)', borderRadius: 8, background: 'var(--clr-surface-2)' 
+                                            background: 'var(--clr-surface)', border: '1px solid var(--clr-border)', 
+                                            borderRadius: 8, padding: 8 
                                         }}>
-                                            {groups.map(g => (
-                                                <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, cursor: 'pointer', padding: 4 }}>
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={createForm.group_ids.includes(g.id)}
-                                                        onChange={() => toggleGroup(g.id)}
-                                                        style={{ accentColor: 'var(--clr-accent)', width: 16, height: 16 }}
-                                                    />
-                                                    {g.name}
-                                                </label>
-                                            ))}
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                                                {createForm.group_ids.map(gid => {
+                                                    const grp = groups.find(g => g.id === gid);
+                                                    return (
+                                                        <span key={gid} style={{ 
+                                                            display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 8px', 
+                                                            borderRadius: 12, background: 'var(--clr-accent-dim)', color: 'var(--clr-accent)',
+                                                            fontSize: 12, fontWeight: 500
+                                                        }}>
+                                                            {grp?.name || 'Unknown Group'}
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => toggleGroup(gid)}
+                                                                style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: 'var(--clr-accent)' }}
+                                                            >
+                                                                <X size={12} />
+                                                            </button>
+                                                        </span>
+                                                    );
+                                                })}
+                                                {(createForm.adhoc_numbers || []).map((num, idx) => (
+                                                    <span key={`adhoc-${idx}`} style={{ 
+                                                        display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 8px', 
+                                                        borderRadius: 12, background: 'var(--clr-surface-2)', color: 'var(--clr-text)',
+                                                        fontSize: 12, fontWeight: 500
+                                                    }}>
+                                                        {num}
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const newNums = [...createForm.adhoc_numbers];
+                                                                newNums.splice(idx, 1);
+                                                                setCreateForm(prev => ({ ...prev, adhoc_numbers: newNums }));
+                                                            }}
+                                                            style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: 'var(--clr-text-3)' }}
+                                                        >
+                                                            <X size={12} />
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                            
+                                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                                <div style={{ position: 'relative', flex: 1 }}>
+                                                    <select
+                                                        className="form-input"
+                                                        style={{ fontSize: 13, height: 36 }}
+                                                        onChange={(e) => {
+                                                            if(e.target.value) {
+                                                                toggleGroup(parseInt(e.target.value));
+                                                                e.target.value = ""; // Reset
+                                                            }
+                                                        }}
+                                                    >
+                                                        <option value="">Select Group...</option>
+                                                        {groups.filter(g => !createForm.group_ids.includes(g.id)).map(g => (
+                                                            <option key={g.id} value={g.id}>{g.name} ({g.contact_count || 0} contacts)</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div style={{ width: 1, height: 24, background: 'var(--clr-border)' }}></div>
+                                                <input
+                                                    ref={audienceInputRef}
+                                                    type="text"
+                                                    placeholder="Paste/Type numbers..."
+                                                    style={{ border: 'none', outline: 'none', fontSize: 13, flex: 1, background: 'transparent' }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter' || e.key === ',') {
+                                                            e.preventDefault();
+                                                            const val = e.target.value.trim().replace(/,/g, '');
+                                                            if (val) {
+                                                                setCreateForm(prev => ({
+                                                                    ...prev,
+                                                                    adhoc_numbers: [...(prev.adhoc_numbers || []), val]
+                                                                }));
+                                                                e.target.value = '';
+                                                            }
+                                                        }
+                                                    }}
+                                                    onPaste={(e) => {
+                                                        e.preventDefault();
+                                                        const paste = e.clipboardData.getData('text');
+                                                        const numbers = paste.split(/[,\n]/).map(n => n.trim()).filter(n => n);
+                                                        if (numbers.length > 0) {
+                                                            setCreateForm(prev => ({
+                                                                ...prev,
+                                                                adhoc_numbers: [...(prev.adhoc_numbers || []), ...numbers]
+                                                            }));
+                                                        }
+                                                    }}
+                                                    onBlur={(e) => {
+                                                        const val = e.target.value.trim().replace(/,/g, '');
+                                                        if (val) {
+                                                            setCreateForm(prev => ({
+                                                                ...prev,
+                                                                adhoc_numbers: [...(prev.adhoc_numbers || []), val]
+                                                            }));
+                                                            e.target.value = '';
+                                                        }
+                                                    }}
+                                                />
+                                            </div>
                                         </div>
                                     </div>
 
@@ -760,26 +883,6 @@ export default function CampaignItemsPage() {
                 {/* ── RIGHT COLUMN: TIMELINE DASHBOARD ── */}
                 <div className="timeline-container scroll-y">
                     
-                    {/* Top Stats */}
-                    <div className="stats-grid">
-                        <div className="stat-card">
-                            <div className="stat-label">Total Messages</div>
-                            <div className="stat-value">{timelineStats.total}</div>
-                        </div>
-                        <div className="stat-card">
-                            <div className="stat-label">Queued</div>
-                            <div className="stat-value" style={{ color: 'var(--clr-amber)' }}>{timelineStats.queued}</div>
-                        </div>
-                        <div className="stat-card">
-                            <div className="stat-label">Sent Successfully</div>
-                            <div className="stat-value" style={{ color: 'var(--clr-green)' }}>{timelineStats.sent}</div>
-                        </div>
-                        <div className="stat-card">
-                            <div className="stat-label">Failed</div>
-                            <div className="stat-value" style={{ color: 'var(--clr-red)' }}>{timelineStats.failed}</div>
-                        </div>
-                    </div>
-
                     {/* Timeline Flow */}
                     <div className="panel-card" style={{ minHeight: 400 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid var(--clr-border)' }}>
@@ -787,13 +890,8 @@ export default function CampaignItemsPage() {
                                 <BarChart3 size={20} style={{ color: 'var(--clr-accent)' }} /> 
                                 Campaign Timeline
                             </h3>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                <div style={{ fontSize: 13, color: 'var(--clr-text-3)' }}>
-                                    {items.length} touchpoints
-                                </div>
-                                <button className="btn btn-secondary btn-sm" onClick={() => setShowCreateMessage(true)}>
-                                    <PlusCircle size={14} style={{ marginRight: 4 }} /> Add
-                                </button>
+                            <div style={{ fontSize: 13, color: 'var(--clr-text-3)' }}>
+                                {items.length} touchpoints
                             </div>
                         </div>
 
@@ -849,7 +947,30 @@ export default function CampaignItemsPage() {
                                                         </span>
                                                     </div>
                                                 </div>
-                                                <StatusBadge status={item.status} />
+                                                
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                    <StatusBadge status={item.status} />
+                                                    <button 
+                                                        className="btn btn-ghost btn-sm"
+                                                        style={{ padding: 4, height: 24, width: 24, color: 'var(--clr-text-3)' }}
+                                                        title="Duplicate Message"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setCreateForm({
+                                                                title: item.title + ' (Copy)',
+                                                                scheduled_at: '', 
+                                                                message_body: item.message_body,
+                                                                channel: item.channel,
+                                                                group_ids: item.group_ids || [],
+                                                                adhoc_numbers: []
+                                                            });
+                                                            setSelectedItemId(null);
+                                                            setShowCreateMessage(true);
+                                                        }}
+                                                    >
+                                                        <Copy size={14} />
+                                                    </button>
+                                                </div>
                                             </div>
                                             
                                             <div className="timeline-details-row">
