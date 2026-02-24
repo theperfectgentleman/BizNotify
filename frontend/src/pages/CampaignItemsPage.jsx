@@ -844,19 +844,17 @@ export default function CampaignItemsPage() {
                                 </form>
                             ) : selectedItem ? (
                                 <div className="animate-fade-in">
-                                     <div style={{ marginBottom: 24 }}>
-                                        <div style={{ fontSize: 11, color: 'var(--clr-text-3)', textTransform: 'uppercase', marginBottom: 6 }}>Overview</div>
-                                        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>{selectedItem.title || 'Untitled'}</div>
-                                        <div style={{ display: 'flex', gap: 12, fontSize: 13, color: 'var(--clr-text-2)' }}>
-                                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                <Clock3 size={14} /> {new Date(selectedItem.scheduled_at).toLocaleString()}
-                                            </span>
+                                     <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <div>
+                                            <div style={{ fontSize: 11, color: 'var(--clr-text-3)', textTransform: 'uppercase', marginBottom: 6 }}>Overview</div>
+                                            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>{selectedItem.title || 'Untitled'}</div>
+                                            <div style={{ display: 'flex', gap: 12, fontSize: 13, color: 'var(--clr-text-2)' }}>
+                                                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                    <Clock3 size={14} /> {new Date(selectedItem.scheduled_at).toLocaleString()}
+                                                </span>
+                                            </div>
                                         </div>
-                                    </div>
-
-                                    <div style={{ display: 'grid', gridTemplateColumns: '0.75fr 1.25fr', gap: 16, marginBottom: 24 }}>
-                                        <div style={{ padding: 12, background: 'var(--clr-surface-2)', borderRadius: 10 }}>
-                                            <div style={{ fontSize: 11, color: 'var(--clr-text-3)', marginBottom: 4 }}>Channel</div>
+                                        <div>
                                             <span style={{
                                                 display: 'inline-flex',
                                                 alignItems: 'center',
@@ -870,6 +868,9 @@ export default function CampaignItemsPage() {
                                                 {selectedItem.channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}
                                             </span>
                                         </div>
+                                    </div>
+
+                                    <div style={{ marginBottom: 24 }}>
                                         <div style={{ padding: 12, background: 'var(--clr-surface-2)', borderRadius: 10 }}>
                                             <div style={{ fontSize: 11, color: 'var(--clr-text-3)', marginBottom: 4 }}>Audience</div>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
