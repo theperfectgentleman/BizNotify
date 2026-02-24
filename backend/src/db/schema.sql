@@ -48,6 +48,9 @@ CREATE TABLE IF NOT EXISTS campaigns (
   message_body TEXT NOT NULL,
   channel      TEXT NOT NULL DEFAULT 'sms' CHECK (channel IN ('sms', 'whatsapp')),
   scheduled_at TIMESTAMPTZ,
+  start_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  end_at       TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days'),
+  target_reach INTEGER,
   cloned_from_campaign_id UUID REFERENCES campaigns(id) ON DELETE SET NULL,
   status       TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','queued','processing','completed','failed')),
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -55,6 +58,33 @@ CREATE TABLE IF NOT EXISTS campaigns (
 );
 
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS cloned_from_campaign_id UUID REFERENCES campaigns(id) ON DELETE SET NULL;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS start_at TIMESTAMPTZ;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS end_at TIMESTAMPTZ;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS target_reach INTEGER;
+
+UPDATE campaigns
+SET start_at = COALESCE(start_at, created_at, NOW())
+WHERE start_at IS NULL;
+
+UPDATE campaigns
+SET end_at = COALESCE(end_at, scheduled_at, start_at + INTERVAL '30 days')
+WHERE end_at IS NULL;
+
+ALTER TABLE campaigns ALTER COLUMN start_at SET NOT NULL;
+ALTER TABLE campaigns ALTER COLUMN end_at SET NOT NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'ck_campaigns_range_valid'
+      AND conrelid = 'campaigns'::regclass
+  ) THEN
+    ALTER TABLE campaigns
+      ADD CONSTRAINT ck_campaigns_range_valid CHECK (start_at <= end_at);
+  END IF;
+END $$;
 
 -- Campaign Items (multiple scheduled messages under one campaign)
 CREATE TABLE IF NOT EXISTS campaign_items (
@@ -111,6 +141,8 @@ CREATE INDEX IF NOT EXISTS idx_contact_groups_group_id ON contact_groups(group_i
 CREATE INDEX IF NOT EXISTS idx_campaigns_user_id ON campaigns(user_id);
 CREATE INDEX IF NOT EXISTS idx_campaigns_status ON campaigns(status);
 CREATE INDEX IF NOT EXISTS idx_campaigns_cloned_from_campaign_id ON campaigns(cloned_from_campaign_id);
+CREATE INDEX IF NOT EXISTS idx_campaigns_start_at ON campaigns(start_at);
+CREATE INDEX IF NOT EXISTS idx_campaigns_end_at ON campaigns(end_at);
 CREATE INDEX IF NOT EXISTS idx_campaign_items_campaign_id ON campaign_items(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_campaign_items_status_scheduled_at ON campaign_items(status, scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_campaign_items_campaign_status ON campaign_items(campaign_id, status);

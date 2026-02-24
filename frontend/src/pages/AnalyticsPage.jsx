@@ -3,20 +3,14 @@ import api from '../services/api';
 import { BarChart2, CheckCircle2, XCircle, Send, Clock, Inbox } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import PropTypes from 'prop-types';
 import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 
 function StatusBadge({ status }) {
     return <span className={`badge badge-${status}`}>{status}</span>;
 }
-
-const STATUS_COLORS = {
-    delivered: '#10b981',
-    sent: '#3b82f6',
-    failed: '#ef4444',
-    queued: '#f59e0b',
-};
 
 const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload?.length) {
@@ -33,6 +27,20 @@ const CustomTooltip = ({ active, payload, label }) => {
         );
     }
     return null;
+};
+
+StatusBadge.propTypes = {
+    status: PropTypes.string,
+};
+
+CustomTooltip.propTypes = {
+    active: PropTypes.bool,
+    payload: PropTypes.arrayOf(PropTypes.shape({
+        name: PropTypes.string,
+        value: PropTypes.number,
+        fill: PropTypes.string,
+    })),
+    label: PropTypes.string,
 };
 
 export default function AnalyticsPage() {
@@ -60,7 +68,14 @@ export default function AnalyticsPage() {
         const title = window.prompt('Campaign title');
         if (!title || !title.trim()) return;
         try {
-            const { data } = await api.post('/messages/campaigns', { title: title.trim(), channel: 'generic' });
+            const now = new Date();
+            const endAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+            const { data } = await api.post('/messages/campaigns', {
+                title: title.trim(),
+                channel: 'generic',
+                start_at: now.toISOString(),
+                end_at: endAt.toISOString(),
+            });
             navigate(`/app/campaigns/${data.campaign.id}/items`);
         } catch (err) {
             toast.error(err.response?.data?.error || 'Failed to create campaign');

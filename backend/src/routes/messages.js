@@ -23,6 +23,58 @@ function normalizeCampaignStorageChannel(value) {
     return channel === 'whatsapp' ? 'whatsapp' : 'sms';
 }
 
+function parseOptionalTimestamp(value, fieldName) {
+    if (value === undefined || value === null || value === '') return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        const err = new Error(`${fieldName} must be a valid datetime`);
+        err.status = 400;
+        throw err;
+    }
+    return parsed.toISOString();
+}
+
+function parseRequiredTimestamp(value, fieldName) {
+    const parsed = parseOptionalTimestamp(value, fieldName);
+    if (!parsed) {
+        const err = new Error(`${fieldName} is required`);
+        err.status = 400;
+        throw err;
+    }
+    return parsed;
+}
+
+function parseTargetReach(value) {
+    if (value === undefined || value === null || value === '') return null;
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+        const err = new Error('target_reach must be a non-negative integer');
+        err.status = 400;
+        throw err;
+    }
+    return parsed;
+}
+
+function assertCampaignRange(startAt, endAt) {
+    if (new Date(startAt).getTime() > new Date(endAt).getTime()) {
+        const err = new Error('start_at must be less than or equal to end_at');
+        err.status = 400;
+        throw err;
+    }
+}
+
+function assertScheduledWithinCampaignRange(scheduledAt, startAt, endAt) {
+    const scheduledMs = new Date(scheduledAt).getTime();
+    const startMs = new Date(startAt).getTime();
+    const endMs = new Date(endAt).getTime();
+
+    if (scheduledMs < startMs || scheduledMs > endMs) {
+        const err = new Error('scheduled_at must be within campaign date range');
+        err.status = 400;
+        throw err;
+    }
+}
+
 async function replaceCampaignItemAudience(client, campaignItemId, groupIds = [], contactIds = []) {
     await client.query(`DELETE FROM campaign_item_groups WHERE campaign_item_id = $1`, [campaignItemId]);
     await client.query(`DELETE FROM campaign_item_contacts WHERE campaign_item_id = $1`, [campaignItemId]);
@@ -388,20 +440,31 @@ router.post('/instant', requireAuth, async (req, res) => {
 // POST /messages/campaigns - create campaign shell
 router.post('/campaigns', requireAuth, async (req, res) => {
     try {
-        const { title, channel = 'generic' } = req.body;
+        const { title, channel = 'generic', start_at, end_at, start_date, end_date, target_reach } = req.body;
         if (!title || !String(title).trim()) {
             return res.status(400).json({ error: 'title is required' });
         }
 
+        const now = new Date();
+        const defaultStartAt = now.toISOString();
+        const defaultEndAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        const normalizedStartAt = parseOptionalTimestamp(start_at ?? start_date, 'start_at') || defaultStartAt;
+        const normalizedEndAt = parseOptionalTimestamp(end_at ?? end_date, 'end_at') || defaultEndAt;
+        const normalizedTargetReach = parseTargetReach(target_reach);
+        assertCampaignRange(normalizedStartAt, normalizedEndAt);
+
         const { rows } = await db.query(
-            `INSERT INTO campaigns (user_id, title, message_body, channel, status)
-             VALUES ($1, $2, $3, $4, 'draft')
+            `INSERT INTO campaigns (user_id, title, message_body, channel, start_at, end_at, target_reach, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'draft')
              RETURNING *`,
             [
                 req.user.id,
                 String(title).trim(),
                 'Campaign series',
-                normalizeCampaignStorageChannel(channel)
+                normalizeCampaignStorageChannel(channel),
+                normalizedStartAt,
+                normalizedEndAt,
+                normalizedTargetReach,
             ]
         );
 
@@ -416,10 +479,10 @@ router.post('/campaigns', requireAuth, async (req, res) => {
 router.patch('/campaigns/:campaignId', requireAuth, async (req, res) => {
     try {
         const { campaignId } = req.params;
-        const { title, channel } = req.body;
+        const { title, channel, start_at, end_at, start_date, end_date, target_reach } = req.body;
 
         const { rows: campaignRows } = await db.query(
-            `SELECT id, user_id, title, channel
+            `SELECT id, user_id, title, channel, start_at, end_at, target_reach
              FROM campaigns
              WHERE id = $1`,
             [campaignId]
@@ -439,17 +502,42 @@ router.patch('/campaigns/:campaignId', requireAuth, async (req, res) => {
             ? normalizeCampaignStorageChannel(channel)
             : existing.channel;
 
+        const nextStartAt = (start_at !== undefined || start_date !== undefined)
+            ? parseRequiredTimestamp(start_at ?? start_date, 'start_at')
+            : existing.start_at;
+        const nextEndAt = (end_at !== undefined || end_date !== undefined)
+            ? parseRequiredTimestamp(end_at ?? end_date, 'end_at')
+            : existing.end_at;
+        const nextTargetReach = target_reach !== undefined
+            ? parseTargetReach(target_reach)
+            : existing.target_reach;
+        assertCampaignRange(nextStartAt, nextEndAt);
+
         const { rows: updatedRows } = await db.query(
             `UPDATE campaigns
              SET title = $2,
                  channel = $3,
+                 start_at = $4,
+                 end_at = $5,
+                 target_reach = $6,
                  updated_at = NOW()
              WHERE id = $1
              RETURNING *`,
-            [campaignId, nextTitle, nextChannel]
+            [campaignId, nextTitle, nextChannel, nextStartAt, nextEndAt, nextTargetReach]
         );
 
-        return res.json({ campaign: updatedRows[0] });
+        const { rows: outOfRangeRows } = await db.query(
+            `SELECT COUNT(*)::int AS out_of_range_count
+             FROM campaign_items
+             WHERE campaign_id = $1
+               AND (scheduled_at < $2 OR scheduled_at > $3)`,
+            [campaignId, nextStartAt, nextEndAt]
+        );
+
+        return res.json({
+            campaign: updatedRows[0],
+            out_of_range_count: outOfRangeRows[0]?.out_of_range_count || 0,
+        });
     } catch (err) {
         console.error('[messages/campaigns:update]', err);
         return res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
@@ -462,7 +550,7 @@ router.get('/campaigns/:campaignId/items', requireAuth, async (req, res) => {
         const { campaignId } = req.params;
 
         const { rows: campaignRows } = await db.query(
-            `SELECT id, title, channel, status, created_at, updated_at
+            `SELECT id, title, channel, status, start_at, end_at, target_reach, created_at, updated_at
              FROM campaigns
              WHERE id = $1 AND user_id = $2`,
             [campaignId, req.user.id]
@@ -473,20 +561,53 @@ router.get('/campaigns/:campaignId/items', requireAuth, async (req, res) => {
         const { rows: items } = await db.query(
             `SELECT
                ci.*,
-               COUNT(m.id)::int AS total_messages,
-               COUNT(m.id) FILTER (WHERE m.status IN ('sent', 'delivered'))::int AS sent_messages,
-               COUNT(m.id) FILTER (WHERE m.status = 'failed')::int AS failed_messages,
-               COUNT(m.id) FILTER (WHERE m.status = 'queued')::int AS queued_messages,
+                             COALESCE(cig.group_ids, ARRAY[]::uuid[]) AS group_ids,
+                             COALESCE(cic.contact_ids, ARRAY[]::uuid[]) AS contact_ids,
+                             COALESCE(cig.group_count, 0) AS group_count,
+                             COALESCE(cic.contact_count, 0) AS contact_count,
+                             COALESCE(ms.total_messages, 0) AS total_messages,
+                             COALESCE(ms.sent_messages, 0) AS sent_messages,
+                             COALESCE(ms.failed_messages, 0) AS failed_messages,
+                             COALESCE(ms.queued_messages, 0) AS queued_messages,
                (ci.status IN ('draft', 'scheduled')) AS can_edit
              FROM campaign_items ci
-             LEFT JOIN messages m ON m.campaign_item_id = ci.id
+                         LEFT JOIN LATERAL (
+                             SELECT
+                                 COUNT(*)::int AS total_messages,
+                                 COUNT(*) FILTER (WHERE status IN ('sent', 'delivered'))::int AS sent_messages,
+                                 COUNT(*) FILTER (WHERE status = 'failed')::int AS failed_messages,
+                                 COUNT(*) FILTER (WHERE status = 'queued')::int AS queued_messages
+                             FROM messages
+                             WHERE campaign_item_id = ci.id
+                         ) ms ON TRUE
+                         LEFT JOIN LATERAL (
+                             SELECT
+                                 ARRAY_AGG(group_id ORDER BY group_id) AS group_ids,
+                                 COUNT(*)::int AS group_count
+                             FROM campaign_item_groups
+                             WHERE campaign_item_id = ci.id
+                         ) cig ON TRUE
+                         LEFT JOIN LATERAL (
+                             SELECT
+                                 ARRAY_AGG(contact_id ORDER BY contact_id) AS contact_ids,
+                                 COUNT(*)::int AS contact_count
+                             FROM campaign_item_contacts
+                             WHERE campaign_item_id = ci.id
+                         ) cic ON TRUE
              WHERE ci.campaign_id = $1
-             GROUP BY ci.id
              ORDER BY ci.scheduled_at ASC, ci.position ASC`,
             [campaignId]
         );
 
-        return res.json({ campaign, items });
+                const campaignStartMs = new Date(campaign.start_at).getTime();
+                const campaignEndMs = new Date(campaign.end_at).getTime();
+                const normalizedItems = items.map((item) => ({
+                        ...item,
+                        is_out_of_range: new Date(item.scheduled_at).getTime() < campaignStartMs
+                                || new Date(item.scheduled_at).getTime() > campaignEndMs,
+                }));
+
+                return res.json({ campaign, items: normalizedItems });
     } catch (err) {
         console.error('[messages/campaign-items:list]', err);
         return res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
@@ -511,18 +632,19 @@ router.post('/campaigns/:campaignId/items', requireAuth, async (req, res) => {
         if (!message_body || !String(message_body).trim()) {
             return res.status(400).json({ error: 'message_body is required' });
         }
-        if (!scheduled_at) {
-            return res.status(400).json({ error: 'scheduled_at is required' });
-        }
         if ((!Array.isArray(group_ids) || group_ids.length === 0) && (!Array.isArray(contact_ids) || contact_ids.length === 0)) {
             return res.status(400).json({ error: 'At least one group_id or contact_id is required' });
         }
 
+        const scheduledAtIso = parseRequiredTimestamp(scheduled_at, 'scheduled_at');
+
         const { rows: campaignRows } = await db.query(
-            `SELECT id FROM campaigns WHERE id = $1 AND user_id = $2`,
+            `SELECT id, start_at, end_at FROM campaigns WHERE id = $1 AND user_id = $2`,
             [campaignId, req.user.id]
         );
-        if (!campaignRows[0]) return res.status(404).json({ error: 'Campaign not found' });
+        const campaign = campaignRows[0];
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+        assertScheduledWithinCampaignRange(scheduledAtIso, campaign.start_at, campaign.end_at);
 
         const dispatchToken = randomUUID();
         const client = await db.getClient();
@@ -550,7 +672,7 @@ router.post('/campaigns/:campaignId/items', requireAuth, async (req, res) => {
                     normalizeCampaignChannel(channel),
                     sender_id,
                     message_type,
-                    scheduled_at,
+                    scheduledAtIso,
                     nextPosition,
                     dispatchToken,
                 ]
@@ -575,7 +697,7 @@ router.post('/campaigns/:campaignId/items', requireAuth, async (req, res) => {
         }
 
         try {
-            await scheduleCampaignItemDispatch(campaignItem.id, scheduled_at, dispatchToken);
+            await scheduleCampaignItemDispatch(campaignItem.id, scheduledAtIso, dispatchToken);
         } catch (err) {
             await db.query(
                 `UPDATE campaign_items SET status = 'failed', updated_at = NOW() WHERE id = $1`,
@@ -607,7 +729,7 @@ router.patch('/campaign-items/:itemId', requireAuth, async (req, res) => {
         } = req.body;
 
         const { rows: itemRows } = await db.query(
-            `SELECT ci.*, c.user_id
+            `SELECT ci.*, c.user_id, c.start_at, c.end_at
              FROM campaign_items ci
              JOIN campaigns c ON c.id = ci.campaign_id
              WHERE ci.id = $1`,
@@ -621,7 +743,10 @@ router.patch('/campaign-items/:itemId', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Only draft/scheduled items can be edited' });
         }
 
-        const nextScheduledAt = scheduled_at || current.scheduled_at;
+        const nextScheduledAt = scheduled_at !== undefined
+            ? parseRequiredTimestamp(scheduled_at, 'scheduled_at')
+            : current.scheduled_at;
+        assertScheduledWithinCampaignRange(nextScheduledAt, current.start_at, current.end_at);
         const nextDispatchToken = randomUUID();
 
         const client = await db.getClient();
@@ -706,10 +831,11 @@ router.patch('/campaign-items/:itemId', requireAuth, async (req, res) => {
 router.post('/campaign-items/:itemId/clone', requireAuth, async (req, res) => {
     try {
         const { itemId } = req.params;
-        const cloneScheduledAt = req.body?.scheduled_at || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        const cloneScheduledAt = parseOptionalTimestamp(req.body?.scheduled_at, 'scheduled_at')
+            || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
         const { rows: sourceRows } = await db.query(
-            `SELECT ci.*, c.user_id
+            `SELECT ci.*, c.user_id, c.start_at, c.end_at
              FROM campaign_items ci
              JOIN campaigns c ON c.id = ci.campaign_id
              WHERE ci.id = $1`,
@@ -719,6 +845,7 @@ router.post('/campaign-items/:itemId/clone', requireAuth, async (req, res) => {
         if (!source || source.user_id !== req.user.id) {
             return res.status(404).json({ error: 'Campaign item not found' });
         }
+        assertScheduledWithinCampaignRange(cloneScheduledAt, source.start_at, source.end_at);
 
         const dispatchToken = randomUUID();
         const client = await db.getClient();

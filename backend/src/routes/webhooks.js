@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const db = require('../db');
+const { refreshCampaignItemStatus } = require('../workers/queue');
 
 /**
  * POST /api/webhooks/termii
@@ -38,10 +39,19 @@ router.post('/termii', async (req, res) => {
         };
         const internalStatus = statusMap[rawStatus] || 'sent';
 
-        const { rowCount } = await db.query(
-            `UPDATE messages SET status = $1, updated_at = NOW() WHERE termii_message_id = $2`,
+        const { rows } = await db.query(
+            `UPDATE messages
+             SET status = $1, updated_at = NOW()
+             WHERE termii_message_id = $2
+             RETURNING campaign_item_id`,
             [internalStatus, termiiMessageId]
         );
+        const rowCount = rows.length;
+
+        const touchedCampaignItemIds = [...new Set(rows.map((row) => row.campaign_item_id).filter(Boolean))];
+        for (const campaignItemId of touchedCampaignItemIds) {
+            await refreshCampaignItemStatus(campaignItemId);
+        }
 
         if (rowCount === 0) {
             console.warn(`[webhook/termii] No message found for termii_message_id: ${termiiMessageId}`);

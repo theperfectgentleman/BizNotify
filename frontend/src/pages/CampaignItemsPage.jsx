@@ -5,8 +5,8 @@ import api from '../services/api';
 import PropTypes from 'prop-types';
 import { 
     ArrowLeft, CalendarPlus, Edit3, Save, Clock3, MessageSquare, 
-    Users, ChevronRight, ChevronDown, PlusCircle, LayoutTemplate, 
-    Send, Smartphone, MessageCircle, BarChart3, AlertCircle, CheckCircle2, Copy, X
+    Users, ChevronDown, PlusCircle, LayoutTemplate, 
+    Send, Smartphone, MessageCircle, BarChart3, Copy, X
 } from 'lucide-react';
 import './CampaignItemsPage.css';
 
@@ -48,6 +48,23 @@ function toIsoOrNull(value) {
     return date.toISOString();
 }
 
+function toDateTimeLocalInput(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (num) => String(num).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function isWithinCampaignRange(scheduledAtIso, campaignStartAtIso, campaignEndAtIso) {
+    if (!scheduledAtIso || !campaignStartAtIso || !campaignEndAtIso) return true;
+    const scheduled = new Date(scheduledAtIso).getTime();
+    const start = new Date(campaignStartAtIso).getTime();
+    const end = new Date(campaignEndAtIso).getTime();
+    if ([scheduled, start, end].some(Number.isNaN)) return false;
+    return scheduled >= start && scheduled <= end;
+}
+
 export default function CampaignItemsPage() {
     const { campaignId } = useParams();
     const navigate = useNavigate();
@@ -71,12 +88,10 @@ export default function CampaignItemsPage() {
     const [campaignForm, setCampaignForm] = useState({
         title: '',
         description: '',
-        start_date: '',
-        end_date: '',
+        start_at: '',
+        end_at: '',
         target_reach: '',
     });
-    const isMockMode = true;
-
     const [createForm, setCreateForm] = useState({
         title: '',
         message_body: '',
@@ -88,22 +103,13 @@ export default function CampaignItemsPage() {
     });
 
     const [selectedItemId, setSelectedItemId] = useState(null);
-
-    const selectedGroups = useMemo(
-        () => groups.filter((group) => createForm.group_ids.includes(group.id)),
-        [groups, createForm.group_ids]
-    );
+    const [editingItemId, setEditingItemId] = useState(null);
 
     const filteredCampaigns = useMemo(() => {
         const keyword = campaignSearch.trim().toLowerCase();
         if (!keyword) return campaigns;
         return campaigns.filter((entry) => entry.title?.toLowerCase().includes(keyword));
     }, [campaigns, campaignSearch]);
-
-    const activeCampaignSummary = useMemo(
-        () => campaigns.find((entry) => entry.id === selectedCampaignId) || null,
-        [campaigns, selectedCampaignId]
-    );
 
     const loadWorkspace = useCallback(async () => {
         setLoading(true);
@@ -130,6 +136,8 @@ export default function CampaignItemsPage() {
                 setSelectedCampaignId(nextCampaignId);
                 setCampaignMode('edit');
             } else {
+                const now = new Date();
+                const inThirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
                 setSelectedCampaignId(null);
                 setCampaign(null);
                 setItems([]);
@@ -137,8 +145,8 @@ export default function CampaignItemsPage() {
                 setCampaignForm({
                     title: '',
                     description: '',
-                    start_date: '',
-                    end_date: '',
+                    start_at: toDateTimeLocalInput(now.toISOString()),
+                    end_at: toDateTimeLocalInput(inThirtyDays.toISOString()),
                     target_reach: '',
                 });
             }
@@ -173,6 +181,9 @@ export default function CampaignItemsPage() {
                 setCampaignForm((prev) => ({
                     ...prev,
                     title: data.campaign.title || '',
+                    start_at: toDateTimeLocalInput(data.campaign.start_at),
+                    end_at: toDateTimeLocalInput(data.campaign.end_at),
+                    target_reach: data.campaign.target_reach ?? '',
                 }));
             }
         } catch (err) {
@@ -220,15 +231,18 @@ export default function CampaignItemsPage() {
     };
 
     const startNewCampaign = () => {
+        const now = new Date();
+        const inThirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
         setCampaignMode('create');
         setCampaignForm({
             title: '',
             description: '',
-            start_date: '',
-            end_date: '',
+            start_at: toDateTimeLocalInput(now.toISOString()),
+            end_at: toDateTimeLocalInput(inThirtyDays.toISOString()),
             target_reach: '',
         });
         setShowCreateMessage(false);
+        setEditingItemId(null);
         setShowCampaignDropdown(false);
     };
 
@@ -236,6 +250,7 @@ export default function CampaignItemsPage() {
         setCampaignMode('edit');
         setSelectedCampaignId(id);
         setShowCreateMessage(false);
+        setEditingItemId(null);
         setShowCampaignDropdown(false);
         setCampaignSearch('');
     };
@@ -244,9 +259,19 @@ export default function CampaignItemsPage() {
         const title = String(campaignForm.title || '').trim();
         if (!title) return toast.error('Campaign title is required');
 
-        if (isMockMode) {
-            toast('Mockup mode: campaign save is disabled for now.');
-            return;
+        const startAtIso = toIsoOrNull(campaignForm.start_at);
+        const endAtIso = toIsoOrNull(campaignForm.end_at);
+        if (!startAtIso || !endAtIso) return toast.error('Campaign start and end date/time are required');
+        if (new Date(startAtIso).getTime() > new Date(endAtIso).getTime()) {
+            return toast.error('Campaign start date/time must be before end date/time');
+        }
+
+        const targetReach = campaignForm.target_reach === ''
+            ? null
+            : Number(campaignForm.target_reach);
+
+        if (targetReach !== null && (!Number.isInteger(targetReach) || targetReach < 0)) {
+            return toast.error('Target audience reach must be a non-negative integer');
         }
 
         setSaving(true);
@@ -254,6 +279,9 @@ export default function CampaignItemsPage() {
             if (campaignMode === 'create') {
                 const { data } = await api.post('/messages/campaigns', {
                     title,
+                    start_at: startAtIso,
+                    end_at: endAtIso,
+                    target_reach: targetReach,
                 });
 
                 const createdCampaign = data?.campaign;
@@ -270,6 +298,9 @@ export default function CampaignItemsPage() {
             } else if (selectedCampaignId) {
                 await api.patch(`/messages/campaigns/${selectedCampaignId}`, {
                     title,
+                    start_at: startAtIso,
+                    end_at: endAtIso,
+                    target_reach: targetReach,
                 });
                 toast.success('Campaign updated');
                 await loadWorkspace();
@@ -285,27 +316,38 @@ export default function CampaignItemsPage() {
         e.preventDefault();
         if (!selectedCampaignId) return toast.error('Create or select a campaign first');
 
-        if (isMockMode) {
-            toast('Mockup mode: adding timeline messages is disabled for now.');
-            return;
-        }
-
         const scheduledAtIso = toIsoOrNull(createForm.scheduled_at);
         if (!createForm.message_body.trim()) return toast.error('Message body is required');
         if (!scheduledAtIso) return toast.error('Valid schedule date is required');
         if (!createForm.group_ids.length) return toast.error('Select at least one group');
+        if (!isWithinCampaignRange(scheduledAtIso, campaign?.start_at, campaign?.end_at)) {
+            return toast.error('Message schedule must be within campaign date range');
+        }
 
         setSaving(true);
         try {
-            await api.post(`/messages/campaigns/${selectedCampaignId}/items`, {
-                title: createForm.title || null,
-                message_body: createForm.message_body,
-                scheduled_at: scheduledAtIso,
-                group_ids: createForm.group_ids,
-                message_type: createForm.message_type,
-                channel: createForm.channel,
-            });
-            toast.success('Scheduled message created');
+            if (editingItemId) {
+                await api.patch(`/messages/campaign-items/${editingItemId}`, {
+                    title: createForm.title || null,
+                    message_body: createForm.message_body,
+                    scheduled_at: scheduledAtIso,
+                    group_ids: createForm.group_ids,
+                    message_type: createForm.message_type,
+                    channel: createForm.channel,
+                });
+                toast.success('Scheduled message updated');
+            } else {
+                await api.post(`/messages/campaigns/${selectedCampaignId}/items`, {
+                    title: createForm.title || null,
+                    message_body: createForm.message_body,
+                    scheduled_at: scheduledAtIso,
+                    group_ids: createForm.group_ids,
+                    message_type: createForm.message_type,
+                    channel: createForm.channel,
+                });
+                toast.success('Scheduled message created');
+            }
+
             setCreateForm({ 
                 title: '', 
                 message_body: '', 
@@ -316,8 +358,10 @@ export default function CampaignItemsPage() {
                 message_type: 'plain' 
             });
             setShowCreateMessage(false);
+            setEditingItemId(null);
             await loadCampaignItems(selectedCampaignId);
-        } catch (err) {            toast.error(err.response?.data?.error || 'Failed to create schedule item');
+        } catch (err) {
+            toast.error(err.response?.data?.error || (editingItemId ? 'Failed to update schedule item' : 'Failed to create schedule item'));
         } finally {
             setSaving(false);
         }
@@ -359,19 +403,6 @@ export default function CampaignItemsPage() {
                             <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>
                                 {campaign?.title || (campaignMode === 'create' ? 'New Campaign' : 'Campaigns')}
                             </h1>
-                            {isMockMode && (
-                                <span style={{ 
-                                    fontSize: 10, 
-                                    fontWeight: 700, 
-                                    background: 'var(--clr-amber)', 
-                                    color: 'white', 
-                                    padding: '2px 6px', 
-                                    borderRadius: 4, 
-                                    textTransform: 'uppercase' 
-                                }}>
-                                    Design Mode
-                                </span>
-                            )}
                         </div>
                         <p style={{ color: 'var(--clr-text-2)', marginTop: 4, fontSize: 14 }}>
                             Orchestrate multi-channel messaging flows for your audience.
@@ -457,7 +488,7 @@ export default function CampaignItemsPage() {
                                             <ChevronDown size={16} style={{ color: 'var(--clr-text-3)' }} />
                                         </h3>
                                         <div style={{ fontSize: 12, color: 'var(--clr-text-3)' }}>
-                                            {campaignForm.start_date ? new Date(campaignForm.start_date).toLocaleDateString() : 'No date'} • {campaignForm.target_reach || '0'} users
+                                            {campaignForm.start_at ? new Date(campaignForm.start_at).toLocaleString() : 'No date'} • {campaignForm.target_reach || '0'} users
                                         </div>
                                         
                                         {showCampaignDropdown && (
@@ -566,21 +597,22 @@ export default function CampaignItemsPage() {
 
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                                     <div className="floating-input-group">
-                                        <label>Start Date</label>
+                                        <label>Start Date & Time</label>
                                         <input
-                                            type="date"
+                                            type="datetime-local"
                                             className="form-input"
-                                            value={campaignForm.start_date}
-                                            onChange={(e) => setCampaignForm(prev => ({ ...prev, start_date: e.target.value }))}
+                                            value={campaignForm.start_at}
+                                            onChange={(e) => setCampaignForm(prev => ({ ...prev, start_at: e.target.value }))}
                                         />
                                     </div>
                                     <div className="floating-input-group">
-                                        <label>End Date</label>
+                                        <label>End Date & Time</label>
                                         <input
-                                            type="date"
+                                            type="datetime-local"
                                             className="form-input"
-                                            value={campaignForm.end_date}
-                                            onChange={(e) => setCampaignForm(prev => ({ ...prev, end_date: e.target.value }))}
+                                            value={campaignForm.end_at}
+                                            min={campaignForm.start_at || undefined}
+                                            onChange={(e) => setCampaignForm(prev => ({ ...prev, end_at: e.target.value }))}
                                         />
                                     </div>
                                 </div>
@@ -644,11 +676,13 @@ export default function CampaignItemsPage() {
                                                         className="btn btn-primary btn-sm"
                                                         onClick={() => {
                                                             setSelectedItemId(null);
+                                                            setEditingItemId(null);
                                                             setCreateForm({
                                                                 title: '',
                                                                 scheduled_at: '',
                                                                 message_body: '',
-                                                                channel: 'sms',
+                                                                channel: 'generic',
+                                                                message_type: 'plain',
                                                                 group_ids: [],
                                                                 adhoc_numbers: []
                                                             });
@@ -719,6 +753,8 @@ export default function CampaignItemsPage() {
                                             type="datetime-local"
                                             className="form-input"
                                             value={createForm.scheduled_at}
+                                            min={campaign?.start_at ? toDateTimeLocalInput(campaign.start_at) : undefined}
+                                            max={campaign?.end_at ? toDateTimeLocalInput(campaign.end_at) : undefined}
                                             onChange={(e) => setCreateForm(prev => ({ ...prev, scheduled_at: e.target.value }))}
                                             required
                                         />
@@ -780,7 +816,7 @@ export default function CampaignItemsPage() {
                                                         style={{ fontSize: 13, height: 36 }}
                                                         onChange={(e) => {
                                                             if(e.target.value) {
-                                                                toggleGroup(parseInt(e.target.value));
+                                                                toggleGroup(e.target.value);
                                                                 e.target.value = ""; // Reset
                                                             }
                                                         }}
@@ -853,12 +889,15 @@ export default function CampaignItemsPage() {
                                             type="button" 
                                             className="btn btn-ghost" 
                                             style={{ flex: 1 }}
-                                            onClick={() => setShowCreateMessage(false)}
+                                            onClick={() => {
+                                                setShowCreateMessage(false);
+                                                setEditingItemId(null);
+                                            }}
                                         >
                                             Cancel
                                         </button>
                                         <button type="submit" className="btn btn-primary" style={{ flex: 2, justifyContent: 'center' }} disabled={saving}>
-                                            {saving ? 'Saving...' : 'Schedule Message'} <CalendarPlus size={16} style={{ marginLeft: 6 }} />
+                                            {saving ? 'Saving...' : (editingItemId ? 'Save Message' : 'Schedule Message')} <CalendarPlus size={16} style={{ marginLeft: 6 }} />
                                         </button>
                                     </div>
                                 </form>
@@ -894,7 +933,7 @@ export default function CampaignItemsPage() {
                                         <div style={{ padding: 12, background: 'var(--clr-surface-2)', borderRadius: 10 }}>
                                             <div style={{ fontSize: 11, color: 'var(--clr-text-3)', marginBottom: 4 }}>Audience</div>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
-                                                 <Users size={16} /> {selectedItem.group_ids?.length || 1} Groups
+                                                    <Users size={16} /> {selectedItem.group_count || selectedItem.group_ids?.length || 0} Groups
                                             </div>
                                         </div>
                                     </div>
@@ -911,11 +950,28 @@ export default function CampaignItemsPage() {
                                     </div>
 
                                     <div style={{ marginTop: 40, paddingTop: 20, borderTop: '1px solid var(--clr-border)' }}>
-                                        <button className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }} disabled>
+                                        <button
+                                            className="btn btn-secondary"
+                                            style={{ width: '100%', justifyContent: 'center' }}
+                                            disabled={!selectedItem.can_edit}
+                                            onClick={() => {
+                                                setEditingItemId(selectedItem.id);
+                                                setCreateForm({
+                                                    title: selectedItem.title || '',
+                                                    message_body: selectedItem.message_body || '',
+                                                    scheduled_at: toDateTimeLocalInput(selectedItem.scheduled_at),
+                                                    group_ids: selectedItem.group_ids || [],
+                                                    adhoc_numbers: [],
+                                                    channel: selectedItem.channel || 'generic',
+                                                    message_type: selectedItem.message_type || 'plain',
+                                                });
+                                                setShowCreateMessage(true);
+                                            }}
+                                        >
                                             <Edit3 size={16} style={{ marginRight: 8 }} /> Edit
                                         </button>
                                         <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--clr-text-3)', marginTop: 8 }}>
-                                            Adjustments disabled for {selectedItem.status} messages.
+                                            {selectedItem.can_edit ? 'You can edit and resave this scheduled message.' : `Adjustments disabled for ${selectedItem.status} messages.`}
                                         </p>
                                     </div>
                                 </div>
@@ -979,6 +1035,7 @@ export default function CampaignItemsPage() {
                                             className={`timeline-card ${isActive ? 'active' : ''}`}
                                             onClick={() => {
                                                 setSelectedItemId(item.id);
+                                                setEditingItemId(null);
                                                 setShowCreateMessage(false);
                                             }}
                                         >
@@ -1011,11 +1068,13 @@ export default function CampaignItemsPage() {
                                                         title="Duplicate Message"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
+                                                            setEditingItemId(null);
                                                             setCreateForm({
-                                                                title: item.title + ' (Copy)',
+                                                                title: `${item.title || `Message #${index + 1}`} (Copy)`,
                                                                 scheduled_at: '', 
                                                                 message_body: item.message_body,
                                                                 channel: item.channel,
+                                                                message_type: item.message_type || 'plain',
                                                                 group_ids: item.group_ids || [],
                                                                 adhoc_numbers: []
                                                             });
@@ -1034,7 +1093,7 @@ export default function CampaignItemsPage() {
                                                 </div>
                                                 <div style={{ display: 'flex', gap: 12 }}>
                                                     <span title="Audience Size" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                        <Users size={12} /> {item.group_ids?.length || 1} Groups
+                                                        <Users size={12} /> {item.group_count || item.group_ids?.length || 0} Groups
                                                     </span>
                                                     <span title="Sent Count" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                                         <Send size={12} /> {item.sent_messages || 0}

@@ -146,9 +146,17 @@ export default function ComposePage() {
         setLoading(true);
         try {
             if (mode === 'campaign') {
+                const firstScheduledAt = form.sendMode === 'schedule' && form.scheduled_at
+                    ? new Date(form.scheduled_at)
+                    : new Date();
+                const startAt = new Date(Math.min(Date.now(), firstScheduledAt.getTime())).toISOString();
+                const endAt = new Date(firstScheduledAt.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
                 const { data: campaignData } = await api.post('/messages/campaigns', {
                     title: form.title,
                     channel: form.channel,
+                    start_at: startAt,
+                    end_at: endAt,
                 });
 
                 const campaignId = campaignData?.campaign?.id;
