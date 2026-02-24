@@ -310,7 +310,7 @@ export default function CampaignItemsPage() {
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '0.95fr 1.45fr', gap: 20, alignItems: 'start' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '0.95fr 1.45fr', gap: 20, alignItems: 'stretch', minHeight: 'calc(100vh - 220px)' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                     <div className="card" style={{ background: 'var(--clr-surface)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14 }}>
@@ -507,7 +507,7 @@ export default function CampaignItemsPage() {
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minHeight: 0, height: '100%' }}>
                     <div className="card" style={{ background: 'var(--clr-surface)' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
                             <div style={{ border: '1px solid var(--clr-border)', borderRadius: 10, padding: 10, background: 'var(--clr-surface-2)' }}>
@@ -529,7 +529,7 @@ export default function CampaignItemsPage() {
                         </div>
                     </div>
 
-                    <div className="card">
+                    <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                             <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <Clock3 size={15} style={{ color: 'var(--clr-accent)' }} />
@@ -546,71 +546,73 @@ export default function CampaignItemsPage() {
                             </button>
                         </div>
 
-                        {campaignMode !== 'edit' ? (
-                            <div className="empty-state" style={{ padding: '30px 12px' }}>
-                                <div className="empty-title">Create a campaign first</div>
-                                <div className="empty-desc">Use the campaign card on the left, then add timeline messages.</div>
-                            </div>
-                        ) : items.length === 0 ? (
-                            <div className="empty-state" style={{ padding: '30px 12px' }}>
-                                <div className="empty-icon"><MessageSquare size={24} /></div>
-                                <div className="empty-title">No timeline messages yet</div>
-                                <div className="empty-desc">Use Add Message to draft and schedule your next touchpoint.</div>
-                            </div>
-                        ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                {items.map((item) => {
-                                    const isActive = selectedItemId === item.id;
-                                    return (
-                                        <button
-                                            key={item.id}
-                                            type="button"
-                                            onClick={() => {
-                                                setSelectedItemId(item.id);
-                                            }}
-                                            style={{
-                                                width: '100%',
-                                                textAlign: 'left',
-                                                background: isActive ? 'var(--clr-accent-dim)' : 'var(--clr-surface)',
-                                                border: `1px solid ${isActive ? 'var(--clr-accent-glow)' : 'var(--clr-border)'}`,
-                                                borderRadius: 12,
-                                                padding: '12px 14px',
-                                                cursor: 'pointer',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 12,
-                                            }}
-                                        >
-                                            <div style={{
-                                                width: 34,
-                                                height: 34,
-                                                borderRadius: 10,
-                                                background: 'var(--clr-surface-2)',
-                                                border: '1px solid var(--clr-border)',
-                                                display: 'inline-flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                color: 'var(--clr-text-2)'
-                                            }}>
-                                                <MessageSquare size={16} />
-                                            </div>
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
-                                                    <div style={{ fontWeight: 600, fontSize: 13 }}>{item.title || `Message ${item.position}`}</div>
-                                                    <StatusBadge status={item.status} />
+                        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
+                            {campaignMode !== 'edit' ? (
+                                <div className="empty-state" style={{ padding: '30px 12px' }}>
+                                    <div className="empty-title">Create a campaign first</div>
+                                    <div className="empty-desc">Use the campaign card on the left, then add timeline messages.</div>
+                                </div>
+                            ) : items.length === 0 ? (
+                                <div className="empty-state" style={{ padding: '30px 12px' }}>
+                                    <div className="empty-icon"><MessageSquare size={24} /></div>
+                                    <div className="empty-title">No timeline messages yet</div>
+                                    <div className="empty-desc">Use Add Message to draft and schedule your next touchpoint.</div>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                    {items.map((item) => {
+                                        const isActive = selectedItemId === item.id;
+                                        return (
+                                            <button
+                                                key={item.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    setSelectedItemId(item.id);
+                                                }}
+                                                style={{
+                                                    width: '100%',
+                                                    textAlign: 'left',
+                                                    background: isActive ? 'var(--clr-accent-dim)' : 'var(--clr-surface)',
+                                                    border: `1px solid ${isActive ? 'var(--clr-accent-glow)' : 'var(--clr-border)'}`,
+                                                    borderRadius: 12,
+                                                    padding: '12px 14px',
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 12,
+                                                }}
+                                            >
+                                                <div style={{
+                                                    width: 34,
+                                                    height: 34,
+                                                    borderRadius: 10,
+                                                    background: 'var(--clr-surface-2)',
+                                                    border: '1px solid var(--clr-border)',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    color: 'var(--clr-text-2)'
+                                                }}>
+                                                    <MessageSquare size={16} />
                                                 </div>
-                                                <div style={{ fontSize: 12, color: 'var(--clr-text-3)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                    <span>{new Date(item.scheduled_at).toLocaleString()}</span>
-                                                    <span>•</span>
-                                                    <span>Sent {Number(item.sent_messages || 0).toLocaleString()}</span>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                                                        <div style={{ fontWeight: 600, fontSize: 13 }}>{item.title || `Message ${item.position}`}</div>
+                                                        <StatusBadge status={item.status} />
+                                                    </div>
+                                                    <div style={{ fontSize: 12, color: 'var(--clr-text-3)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                        <span>{new Date(item.scheduled_at).toLocaleString()}</span>
+                                                        <span>•</span>
+                                                        <span>Sent {Number(item.sent_messages || 0).toLocaleString()}</span>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            <ChevronRight size={16} style={{ color: 'var(--clr-text-3)' }} />
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        )}
+                                                <ChevronRight size={16} style={{ color: 'var(--clr-text-3)' }} />
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
 
                         {showCreateMessage && campaignMode === 'edit' && selectedCampaignId && (
                             <form className="card" onSubmit={createItem} style={{ marginTop: 14, background: 'var(--clr-surface-2)' }}>
