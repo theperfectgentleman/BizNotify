@@ -995,7 +995,7 @@ export default function CampaignItemsPage() {
                 <div className="timeline-container">
                     
                     {/* Timeline Flow */}
-                    <div className="panel-card" style={{ minHeight: 400 }}>
+                    <div className="panel-card" style={{ height: '100%' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid var(--clr-border)' }}>
                             <h3 style={{ fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10 }}>
                                 <BarChart3 size={20} style={{ color: 'var(--clr-accent)' }} /> 
@@ -1006,7 +1006,7 @@ export default function CampaignItemsPage() {
                             </div>
                         </div>
 
-                        <div className="timeline-track">
+                        <div className="timeline-track" style={{ flex: 1 }}>
                             {/* Empty State */}
                             {items.length === 0 && campaignMode === 'edit' && !showCreateMessage && (
                                 <div style={{ 
