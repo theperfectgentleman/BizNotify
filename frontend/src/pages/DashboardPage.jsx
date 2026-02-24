@@ -3,6 +3,7 @@ import api from '../services/api';
 import { Send, Users, MessageSquare, CheckCircle2, XCircle, Wallet, TrendingUp, Clock, Search, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import PropTypes from 'prop-types';
 
 function StatCard({ icon, label, value, color, sub }) {
     return (
@@ -18,6 +19,18 @@ function StatCard({ icon, label, value, color, sub }) {
 function StatusBadge({ status }) {
     return <span className={`badge badge-${status}`}>{status}</span>;
 }
+
+StatCard.propTypes = {
+    icon: PropTypes.node,
+    label: PropTypes.string,
+    value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    color: PropTypes.string,
+    sub: PropTypes.string,
+};
+
+StatusBadge.propTypes = {
+    status: PropTypes.string,
+};
 
 export default function DashboardPage() {
     const [data, setData] = useState(null);
@@ -141,6 +154,7 @@ export default function DashboardPage() {
                                 <tr>
                                     <th>Campaign</th>
                                     <th>Channel</th>
+                                    <th>Window</th>
                                     <th>Status</th>
                                     <th>Messages</th>
                                     <th>Delivered</th>
@@ -157,6 +171,11 @@ export default function DashboardPage() {
                                         <tr key={c.id}>
                                             <td style={{ fontWeight: 500 }}>{c.title}</td>
                                             <td><span style={{ textTransform: 'uppercase', fontSize: 11, letterSpacing: '0.05em', color: 'var(--clr-text-3)' }}>{c.channel}</span></td>
+                                            <td style={{ fontSize: 12, color: 'var(--clr-text-2)', minWidth: 160 }}>
+                                                {c.start_at && c.end_at
+                                                    ? `${new Date(c.start_at).toLocaleDateString()} - ${new Date(c.end_at).toLocaleDateString()}`
+                                                    : 'Not set'}
+                                            </td>
                                             <td><StatusBadge status={c.status} /></td>
                                             <td>{total.toLocaleString()}</td>
                                             <td className="text-green">{delivered.toLocaleString()}</td>

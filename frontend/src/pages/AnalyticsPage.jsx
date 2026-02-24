@@ -153,6 +153,7 @@ export default function AnalyticsPage() {
                                 <tr>
                                     <th>Campaign</th>
                                     <th>Channel</th>
+                                    <th>Window</th>
                                     <th>Status</th>
                                     <th>Total</th>
                                     <th>Delivered</th>
@@ -177,6 +178,11 @@ export default function AnalyticsPage() {
                                             </td>
                                             <td>
                                                 <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--clr-text-3)' }}>{c.channel}</span>
+                                            </td>
+                                            <td style={{ fontSize: 12, color: 'var(--clr-text-2)', minWidth: 180 }}>
+                                                {c.start_at && c.end_at
+                                                    ? `${new Date(c.start_at).toLocaleDateString()} - ${new Date(c.end_at).toLocaleDateString()}`
+                                                    : 'Not set'}
                                             </td>
                                             <td><StatusBadge status={c.status} /></td>
                                             <td>{total.toLocaleString()}</td>

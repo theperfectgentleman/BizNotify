@@ -17,7 +17,7 @@ router.get('/summary', requireAuth, async (req, res) => {
         FROM messages
       `),
             db.query(`
-        SELECT c.id, c.title, c.channel, c.status, c.created_at,
+        SELECT c.id, c.title, c.channel, c.status, c.start_at, c.end_at, c.created_at,
           COUNT(m.id) AS total_messages,
           COUNT(m.id) FILTER (WHERE m.status = 'delivered') AS delivered
         FROM campaigns c
