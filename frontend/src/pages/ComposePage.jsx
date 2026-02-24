@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-import { Send, MessageSquare, Type, X, ChevronDown } from 'lucide-react';
+import { Send, MessageSquare, Type, X, ChevronDown, Users, Clock3 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import PropTypes from 'prop-types';
 
@@ -34,8 +34,6 @@ export default function ComposePage() {
     const [form, setForm] = useState({
         title: '',
         message_body: '',
-        campaign_message_mode: 'single',
-        group_messages: {},
         channel: 'generic', // generic, dnd, whatsapp
         message_type: 'plain', // plain, unicode
         sender_id: '',
@@ -66,21 +64,13 @@ export default function ComposePage() {
     }, []);
 
     useEffect(() => {
-        const firstGroupMessage = selectedGroups
-            .map(group => form.group_messages[group.id] || '')
-            .find(Boolean) || '';
-
-        const sourceMessage = mode === 'campaign' && form.campaign_message_mode === 'per_group'
-            ? firstGroupMessage
-            : form.message_body;
-
         setPreview(
-            sourceMessage
+            form.message_body
                 .replace(/\{\{first_name\}\}/gi, 'John')
                 .replace(/\{\{last_name\}\}/gi, 'Doe')
                 .replace(/\{\{phone\}\}/gi, mode === 'instant' ? (form.target_phones.split(/[,\s]+/)[0] || '2348012345678') : '2348012345678')
         );
-    }, [form.message_body, form.group_messages, form.target_phones, mode, form.campaign_message_mode, selectedGroups]);
+    }, [form.message_body, form.target_phones, mode]);
 
     useEffect(() => {
         setForm(f => ({
@@ -132,21 +122,12 @@ export default function ComposePage() {
     );
     const selectedGroupContactCount = selectedGroups.reduce((acc, group) => acc + Number(group.contact_count || 0), 0);
     const isWhatsApp = form.channel === 'whatsapp';
+    const firstMessageTimingLabel = form.sendMode === 'schedule' && form.scheduled_at
+        ? new Date(form.scheduled_at).toLocaleString()
+        : 'Immediately after creation';
 
-    const insertVar = (variable, groupId = null) => {
-        setForm(f => {
-            if (mode === 'campaign' && f.campaign_message_mode === 'per_group' && groupId) {
-                return {
-                    ...f,
-                    group_messages: {
-                        ...f.group_messages,
-                        [groupId]: `${f.group_messages[groupId] || ''}{{${variable}}}`
-                    }
-                };
-            }
-
-            return { ...f, message_body: f.message_body + `{{${variable}}}` };
-        });
+    const insertVar = (variable) => {
+        setForm(f => ({ ...f, message_body: f.message_body + `{{${variable}}}` }));
     };
 
     const submit = async (e) => {
@@ -154,15 +135,7 @@ export default function ComposePage() {
         if (mode === 'campaign') {
             if (!form.title.trim()) return toast.error('Campaign title is required');
             if (!form.group_ids.length) return toast.error('Select at least one group');
-
-            if (form.campaign_message_mode === 'single') {
-                if (!form.message_body.trim()) return toast.error('Message body is required');
-            } else {
-                const missingGroups = selectedGroups.filter(g => !(form.group_messages[g.id] || '').trim());
-                if (missingGroups.length > 0) {
-                    return toast.error('Add a message for each selected group');
-                }
-            }
+            if (!form.message_body.trim()) return toast.error('Message body is required');
         } else {
             if (!form.message_body.trim()) return toast.error('Message body is required');
             if (!form.target_phones.trim() && !form.group_ids.length) {
@@ -187,32 +160,15 @@ export default function ComposePage() {
                     ? form.scheduled_at
                     : new Date().toISOString();
 
-                if (form.campaign_message_mode === 'single') {
-                    await api.post(`/messages/campaigns/${campaignId}/items`, {
-                        title: form.title,
-                        message_body: form.message_body,
-                        scheduled_at: scheduledAt,
-                        group_ids: form.group_ids,
-                        channel: form.channel,
-                        sender_id: form.sender_id || undefined,
-                        message_type: form.message_type,
-                    });
-                } else {
-                    await Promise.all(
-                        form.group_ids.map((groupId) => {
-                            const groupName = selectedGroups.find(g => g.id === groupId)?.name;
-                            return api.post(`/messages/campaigns/${campaignId}/items`, {
-                                title: `${form.title} - ${groupName || 'Segment'}`,
-                                message_body: (form.group_messages[groupId] || '').trim(),
-                                scheduled_at: scheduledAt,
-                                group_ids: [groupId],
-                                channel: form.channel,
-                                sender_id: form.sender_id || undefined,
-                                message_type: form.message_type,
-                            });
-                        })
-                    );
-                }
+                await api.post(`/messages/campaigns/${campaignId}/items`, {
+                    title: form.title,
+                    message_body: form.message_body,
+                    scheduled_at: scheduledAt,
+                    group_ids: form.group_ids,
+                    channel: form.channel,
+                    sender_id: form.sender_id || undefined,
+                    message_type: form.message_type,
+                });
 
                 toast.success('Campaign series created. Add or edit scheduled messages as needed.');
                 navigate(`/app/campaigns/${campaignId}/items`);
@@ -249,6 +205,11 @@ export default function ComposePage() {
                         <div className="page-subtitle">
                             {mode === 'campaign' ? 'Create a campaign and schedule its first message. You can add or edit more messages next.' : 'Quick send to selected groups and manually entered numbers via SMS or WhatsApp'}
                         </div>
+                        {mode === 'campaign' && (
+                            <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--clr-surface-2)', border: '1px solid var(--clr-border)', borderRadius: 999, padding: '5px 10px', fontSize: 12, color: 'var(--clr-text-2)', fontWeight: 600 }}>
+                                Step 1 of 2 · Draft first timeline message
+                            </div>
+                        )}
                     </div>
                     <div style={{ minWidth: 220 }}>
                         <div className="form-label" style={{ marginBottom: 8 }}>Channel</div>
@@ -300,6 +261,32 @@ export default function ComposePage() {
                 </div>
             </div>
 
+            {mode === 'campaign' && (
+                <div className="card" style={{ marginBottom: 20, background: 'var(--clr-surface)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                        <div style={{ border: '1px solid var(--clr-border)', borderRadius: 10, padding: 10, background: 'var(--clr-surface-2)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--clr-text-3)', marginBottom: 4 }}>
+                                <Users size={12} /> Audience
+                            </div>
+                            <div style={{ fontWeight: 700, fontSize: 15 }}>{form.group_ids.length} group(s)</div>
+                            <div style={{ fontSize: 12, color: 'var(--clr-text-3)' }}>~{selectedGroupContactCount.toLocaleString()} contacts</div>
+                        </div>
+                        <div style={{ border: '1px solid var(--clr-border)', borderRadius: 10, padding: 10, background: 'var(--clr-surface-2)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--clr-text-3)', marginBottom: 4 }}>
+                                <Clock3 size={12} /> First Send
+                            </div>
+                            <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>{firstMessageTimingLabel}</div>
+                        </div>
+                        <div style={{ border: '1px solid var(--clr-border)', borderRadius: 10, padding: 10, background: 'var(--clr-surface-2)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--clr-text-3)', marginBottom: 4 }}>
+                                <MessageSquare size={12} /> Next Step
+                            </div>
+                            <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>Manage full timeline after create</div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <form onSubmit={submit} style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24 }}>
                 {/* Left: Main form */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -308,7 +295,7 @@ export default function ComposePage() {
                         <div className="card">
                             <div style={{ marginBottom: 20, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <Type size={16} style={{ color: 'var(--clr-accent)' }} />
-                                Campaign Details
+                                Campaign Setup
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Campaign Title *</label>
@@ -351,95 +338,34 @@ export default function ComposePage() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                             <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <MessageSquare size={16} style={{ color: 'var(--clr-accent)' }} />
-                                {mode === 'campaign' ? 'Campaign Message(s)' : 'Message Body'}
+                                {mode === 'campaign' ? 'First Message Draft' : 'Message Body'}
                             </div>
-                            {!(mode === 'campaign' && form.campaign_message_mode === 'per_group') && (
-                                <div style={{ display: 'flex', gap: 6 }}>
-                                    {['first_name', 'last_name', 'phone'].map(v => (
-                                        <button key={v} type="button" className="btn btn-secondary btn-sm" onClick={() => insertVar(v)}>
-                                            {`{{${v}}}`}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                {['first_name', 'last_name', 'phone'].map(v => (
+                                    <button key={v} type="button" className="btn btn-secondary btn-sm" onClick={() => insertVar(v)}>
+                                        {`{{${v}}}`}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
 
                         {mode === 'campaign' && (
-                            <div style={{ marginBottom: 14 }}>
-                                <div className="form-label" style={{ marginBottom: 8 }}>Message Strategy</div>
-                                <div className="toggle-group">
-                                    <button
-                                        type="button"
-                                        className={`toggle-btn ${form.campaign_message_mode === 'single' ? 'active' : ''}`}
-                                        onClick={() => setForm(f => ({ ...f, campaign_message_mode: 'single' }))}
-                                    >
-                                        Single Message
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={`toggle-btn ${form.campaign_message_mode === 'per_group' ? 'active' : ''}`}
-                                        onClick={() => setForm(f => ({ ...f, campaign_message_mode: 'per_group' }))}
-                                    >
-                                        Per-Group Messages
-                                    </button>
-                                </div>
-                                <div style={{ marginTop: 8, fontSize: 12, color: 'var(--clr-text-3)' }}>
-                                    This creates the first scheduled item in your campaign series.
-                                </div>
+                            <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--clr-text-3)' }}>
+                                This creates your first timeline message. Add and edit more messages after campaign creation.
                             </div>
                         )}
 
-                        {mode === 'campaign' && form.campaign_message_mode === 'per_group' ? (
-                            selectedGroups.length === 0 ? (
-                                <div style={{ fontSize: 13, color: 'var(--clr-text-2)', padding: '12px 0' }}>
-                                    Select at least one audience group to compose per-group messages.
-                                </div>
-                            ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                                    {selectedGroups.map(group => (
-                                        <div key={group.id} style={{ border: '1px solid var(--clr-border)', borderRadius: 10, padding: 12, background: 'var(--clr-surface-2)' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8, flexWrap: 'wrap' }}>
-                                                <div style={{ fontWeight: 600, fontSize: 13 }}>{group.name}</div>
-                                                <div style={{ display: 'flex', gap: 6 }}>
-                                                    {['first_name', 'last_name', 'phone'].map(v => (
-                                                        <button key={v} type="button" className="btn btn-secondary btn-sm" onClick={() => insertVar(v, group.id)}>
-                                                            {`{{${v}}}`}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                            <textarea
-                                                className="form-textarea"
-                                                style={{ minHeight: 120 }}
-                                                value={form.group_messages[group.id] || ''}
-                                                onChange={e => setForm(f => ({
-                                                    ...f,
-                                                    group_messages: {
-                                                        ...f.group_messages,
-                                                        [group.id]: e.target.value
-                                                    }
-                                                }))}
-                                                placeholder={isWhatsApp ? `Hi {{first_name}}, this is your WhatsApp update for ${group.name}.` : `Hello {{first_name}}, message for ${group.name}.`}
-                                                required
-                                            />
-                                            <CharCounter text={form.group_messages[group.id] || ''} />
-                                        </div>
-                                    ))}
-                                </div>
-                            )
-                        ) : (
-                            <>
-                                <textarea
-                                    className="form-textarea"
-                                    style={{ minHeight: 160 }}
-                                    value={form.message_body}
-                                    onChange={e => setForm(f => ({ ...f, message_body: e.target.value }))}
-                                    placeholder={isWhatsApp ? 'Hi {{first_name}}, this is your WhatsApp update.' : 'Hello {{first_name}}, we have an exclusive offer for you!'}
-                                    required
-                                />
-                                <CharCounter text={form.message_body} />
-                            </>
-                        )}
+                        <>
+                            <textarea
+                                className="form-textarea"
+                                style={{ minHeight: 160 }}
+                                value={form.message_body}
+                                onChange={e => setForm(f => ({ ...f, message_body: e.target.value }))}
+                                placeholder={isWhatsApp ? 'Hi {{first_name}}, this is your WhatsApp update.' : 'Hello {{first_name}}, we have an exclusive offer for you!'}
+                                required
+                            />
+                            <CharCounter text={form.message_body} />
+                        </>
 
                         <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 16 }}>
                             <label className="form-label" style={{ marginBottom: 0 }}>Message Type:</label>
@@ -486,7 +412,7 @@ export default function ComposePage() {
                     {/* Audience */}
                     {mode === 'campaign' ? (
                         <div className="card">
-                            <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 14 }}>Select Audience *</div>
+                            <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 14 }}>Audience for First Message *</div>
                             {groups.length === 0 ? (
                                 <div style={{ fontSize: 13, color: 'var(--clr-text-2)', textAlign: 'center', padding: '20px 0' }}>
                                     No groups yet. Create groups first.
@@ -667,6 +593,11 @@ export default function ComposePage() {
                             : <><Send size={16} /> {mode === 'instant' ? 'Send Instant Message' : form.sendMode === 'schedule' ? 'Create & Schedule Series' : 'Create Series (Start Now)'}</>
                         }
                     </button>
+                    {mode === 'campaign' && (
+                        <div style={{ fontSize: 12, color: 'var(--clr-text-3)', textAlign: 'center' }}>
+                            After creation, you&apos;ll be taken to the timeline workspace to add, edit, and clone messages.
+                        </div>
+                    )}
                 </div>
             </form>
         </>

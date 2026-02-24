@@ -1,12 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import api from '../services/api';
-import { ArrowLeft, CalendarPlus, Copy, Edit3, Save } from 'lucide-react';
+import PropTypes from 'prop-types';
+import { ArrowLeft, CalendarPlus, Copy, Edit3, Save, Clock3, MessageSquare, Users, ChevronRight } from 'lucide-react';
 
 function StatusBadge({ status }) {
     return <span className={`badge badge-${status}`}>{status}</span>;
 }
+
+StatusBadge.propTypes = {
+    status: PropTypes.string,
+};
 
 function toLocalInputValue(isoDate) {
     if (!isoDate) return '';
@@ -33,6 +38,7 @@ export default function CampaignItemsPage() {
     const [groups, setGroups] = useState([]);
     const [showCreate, setShowCreate] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [selectedItemId, setSelectedItemId] = useState(null);
 
     const [createForm, setCreateForm] = useState({
         title: '',
@@ -50,27 +56,33 @@ export default function CampaignItemsPage() {
         [groups, createForm.group_ids]
     );
 
-    const load = async () => {
+    const load = useCallback(async () => {
         setLoading(true);
         try {
             const [{ data: itemData }, { data: groupData }] = await Promise.all([
                 api.get(`/messages/campaigns/${campaignId}/items`),
                 api.get('/groups'),
             ]);
+            const nextItems = itemData.items || [];
             setCampaign(itemData.campaign);
-            setItems(itemData.items || []);
+            setItems(nextItems);
             setGroups(groupData || []);
+            setSelectedItemId((prev) => {
+                if (nextItems.length === 0) return null;
+                if (prev && nextItems.some((item) => item.id === prev)) return prev;
+                return nextItems[0].id;
+            });
         } catch (err) {
             toast.error(err.response?.data?.error || 'Failed to load campaign schedule');
             navigate('/app/analytics');
         } finally {
             setLoading(false);
         }
-    };
+    }, [campaignId, navigate]);
 
     useEffect(() => {
         load();
-    }, [campaignId]);
+    }, [load]);
 
     const toggleGroup = (id) => {
         setCreateForm((prev) => ({
@@ -153,6 +165,21 @@ export default function CampaignItemsPage() {
         }
     };
 
+    const selectedItem = useMemo(
+        () => items.find((item) => item.id === selectedItemId) || null,
+        [items, selectedItemId]
+    );
+
+    const timelineStats = useMemo(() => {
+        return items.reduce((acc, item) => {
+            acc.total += 1;
+            acc.sent += Number(item.sent_messages || 0);
+            acc.failed += Number(item.failed_messages || 0);
+            acc.queued += Number(item.queued_messages || 0);
+            return acc;
+        }, { total: 0, sent: 0, failed: 0, queued: 0 });
+    }, [items]);
+
     if (loading) {
         return <div className="loading-center"><span className="spinner spinner-lg" /></div>;
     }
@@ -165,166 +192,255 @@ export default function CampaignItemsPage() {
                         <ArrowLeft size={14} /> Back to Analytics
                     </button>
                     <div className="page-title" style={{ marginTop: 10 }}>{campaign?.title || 'Campaign Schedule'}</div>
-                    <div className="page-subtitle">Plan, edit, and clone scheduled message items under one campaign</div>
+                    <div className="page-subtitle">Create a timeline of messages, track status, edit drafts, and clone sent items</div>
                 </div>
                 <button className="btn btn-primary" onClick={() => setShowCreate(v => !v)}>
-                    <CalendarPlus size={15} /> {showCreate ? 'Close' : 'Create Message'}
+                    <CalendarPlus size={15} /> {showCreate ? 'Close Composer' : 'Add Message'}
                 </button>
             </div>
 
-            {showCreate && (
-                <form className="card" onSubmit={createItem} style={{ marginBottom: 20 }}>
-                    <div style={{ fontWeight: 600, marginBottom: 14 }}>New Scheduled Message</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                        <div className="form-group">
-                            <label className="form-label">Item Title (optional)</label>
-                            <input
-                                className="form-input"
-                                value={createForm.title}
-                                onChange={(e) => setCreateForm((p) => ({ ...p, title: e.target.value }))}
-                                placeholder="e.g. Christmas Eve Reminder"
-                            />
+            <div style={{ display: 'grid', gridTemplateColumns: '1.25fr 1fr', gap: 20, alignItems: 'start' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    <div className="card" style={{ background: 'var(--clr-surface)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+                            <div style={{ fontWeight: 700, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <MessageSquare size={16} style={{ color: 'var(--clr-accent)' }} />
+                                Campaign Timeline
+                            </div>
+                            <StatusBadge status={campaign?.status || 'draft'} />
                         </div>
-                        <div className="form-group">
-                            <label className="form-label">Schedule Date & Time</label>
-                            <input
-                                type="datetime-local"
-                                className="form-input"
-                                value={createForm.scheduled_at}
-                                onChange={(e) => setCreateForm((p) => ({ ...p, scheduled_at: e.target.value }))}
-                                required
-                            />
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+                            <div style={{ border: '1px solid var(--clr-border)', borderRadius: 10, padding: 10, background: 'var(--clr-surface-2)' }}>
+                                <div style={{ fontSize: 11, color: 'var(--clr-text-3)' }}>Messages</div>
+                                <div style={{ fontWeight: 700, fontSize: 18 }}>{timelineStats.total}</div>
+                            </div>
+                            <div style={{ border: '1px solid var(--clr-border)', borderRadius: 10, padding: 10, background: 'var(--clr-surface-2)' }}>
+                                <div style={{ fontSize: 11, color: 'var(--clr-text-3)' }}>Queued</div>
+                                <div style={{ fontWeight: 700, fontSize: 18 }}>{timelineStats.queued.toLocaleString()}</div>
+                            </div>
+                            <div style={{ border: '1px solid var(--clr-border)', borderRadius: 10, padding: 10, background: 'var(--clr-surface-2)' }}>
+                                <div style={{ fontSize: 11, color: 'var(--clr-text-3)' }}>Sent</div>
+                                <div style={{ fontWeight: 700, fontSize: 18 }}>{timelineStats.sent.toLocaleString()}</div>
+                            </div>
+                            <div style={{ border: '1px solid var(--clr-border)', borderRadius: 10, padding: 10, background: 'var(--clr-surface-2)' }}>
+                                <div style={{ fontSize: 11, color: 'var(--clr-text-3)' }}>Failed</div>
+                                <div style={{ fontWeight: 700, fontSize: 18 }}>{timelineStats.failed.toLocaleString()}</div>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="form-group" style={{ marginTop: 10 }}>
-                        <label className="form-label">Audience Groups *</label>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, maxHeight: 180, overflowY: 'auto', padding: 8, border: '1px solid var(--clr-border)', borderRadius: 8 }}>
-                            {groups.map((g) => (
-                                <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                    {showCreate && (
+                        <form className="card" onSubmit={createItem}>
+                            <div style={{ fontWeight: 600, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <CalendarPlus size={16} style={{ color: 'var(--clr-accent)' }} />
+                                Draft New Timeline Message
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                <div className="form-group">
+                                    <label className="form-label">Message Title (optional)</label>
                                     <input
-                                        type="checkbox"
-                                        checked={createForm.group_ids.includes(g.id)}
-                                        onChange={() => toggleGroup(g.id)}
-                                        style={{ accentColor: 'var(--clr-accent)' }}
+                                        className="form-input"
+                                        value={createForm.title}
+                                        onChange={(e) => setCreateForm((p) => ({ ...p, title: e.target.value }))}
+                                        placeholder="e.g. Christmas Eve Reminder"
                                     />
-                                    <span>{g.name}</span>
-                                </label>
-                            ))}
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Schedule Date &amp; Time *</label>
+                                    <input
+                                        type="datetime-local"
+                                        className="form-input"
+                                        value={createForm.scheduled_at}
+                                        onChange={(e) => setCreateForm((p) => ({ ...p, scheduled_at: e.target.value }))}
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-group" style={{ marginTop: 12 }}>
+                                <label className="form-label">Audience Groups *</label>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, maxHeight: 170, overflowY: 'auto', padding: 10, border: '1px solid var(--clr-border)', borderRadius: 10, background: 'var(--clr-surface-2)' }}>
+                                    {groups.map((g) => (
+                                        <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--clr-text-2)' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={createForm.group_ids.includes(g.id)}
+                                                onChange={() => toggleGroup(g.id)}
+                                                style={{ accentColor: 'var(--clr-accent)' }}
+                                            />
+                                            <span>{g.name}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                                {selectedGroups.length > 0 && (
+                                    <div style={{ fontSize: 12, color: 'var(--clr-text-3)', marginTop: 8 }}>
+                                        Selected: {selectedGroups.map((g) => g.name).join(', ')}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="form-group" style={{ marginTop: 12 }}>
+                                <label className="form-label">Message Body *</label>
+                                <textarea
+                                    className="form-textarea"
+                                    style={{ minHeight: 120 }}
+                                    value={createForm.message_body}
+                                    onChange={(e) => setCreateForm((p) => ({ ...p, message_body: e.target.value }))}
+                                    placeholder="Hello {{first_name}}, holiday update from us..."
+                                    required
+                                />
+                            </div>
+
+                            <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
+                                <button type="submit" className="btn btn-primary" disabled={saving}>
+                                    {saving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <Save size={14} />} Add to Timeline
+                                </button>
+                            </div>
+                        </form>
+                    )}
+
+                    <div className="card">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                            <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Clock3 size={15} style={{ color: 'var(--clr-accent)' }} />
+                                Timeline Messages
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--clr-text-3)' }}>{items.length} item(s)</div>
                         </div>
-                        {selectedGroups.length > 0 && (
-                            <div style={{ fontSize: 12, color: 'var(--clr-text-3)', marginTop: 8 }}>
-                                Selected: {selectedGroups.map((g) => g.name).join(', ')}
+
+                        {items.length === 0 ? (
+                            <div className="empty-state" style={{ padding: '30px 12px' }}>
+                                <div className="empty-icon"><MessageSquare size={24} /></div>
+                                <div className="empty-title">No timeline messages yet</div>
+                                <div className="empty-desc">Use Add Message to draft and schedule your next touchpoint.</div>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                {items.map((item) => {
+                                    const isActive = selectedItemId === item.id;
+                                    return (
+                                        <button
+                                            key={item.id}
+                                            type="button"
+                                            onClick={() => {
+                                                setSelectedItemId(item.id);
+                                                setEditingId(null);
+                                            }}
+                                            style={{
+                                                width: '100%',
+                                                textAlign: 'left',
+                                                background: isActive ? 'var(--clr-accent-dim)' : 'var(--clr-surface)',
+                                                border: `1px solid ${isActive ? 'var(--clr-accent-glow)' : 'var(--clr-border)'}`,
+                                                borderRadius: 12,
+                                                padding: '12px 14px',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 12,
+                                            }}
+                                        >
+                                            <div style={{
+                                                width: 34,
+                                                height: 34,
+                                                borderRadius: 10,
+                                                background: 'var(--clr-surface-2)',
+                                                border: '1px solid var(--clr-border)',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                color: 'var(--clr-text-2)'
+                                            }}>
+                                                <MessageSquare size={16} />
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                                                    <div style={{ fontWeight: 600, fontSize: 13 }}>{item.title || `Message ${item.position}`}</div>
+                                                    <StatusBadge status={item.status} />
+                                                </div>
+                                                <div style={{ fontSize: 12, color: 'var(--clr-text-3)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                    <span>{new Date(item.scheduled_at).toLocaleString()}</span>
+                                                    <span>•</span>
+                                                    <span>Sent {Number(item.sent_messages || 0).toLocaleString()}</span>
+                                                </div>
+                                            </div>
+                                            <ChevronRight size={16} style={{ color: 'var(--clr-text-3)' }} />
+                                        </button>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
-
-                    <div className="form-group" style={{ marginTop: 10 }}>
-                        <label className="form-label">Message Body *</label>
-                        <textarea
-                            className="form-textarea"
-                            style={{ minHeight: 130 }}
-                            value={createForm.message_body}
-                            onChange={(e) => setCreateForm((p) => ({ ...p, message_body: e.target.value }))}
-                            placeholder="Hello {{first_name}}, holiday update from us..."
-                            required
-                        />
-                    </div>
-
-                    <div style={{ marginTop: 14 }}>
-                        <button type="submit" className="btn btn-primary" disabled={saving}>
-                            {saving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <Save size={14} />} Save Scheduled Message
-                        </button>
-                    </div>
-                </form>
-            )}
-
-            <div className="card">
-                <div style={{ fontWeight: 600, marginBottom: 14 }}>Scheduled Messages</div>
-
-                {items.length === 0 ? (
-                    <div className="empty-state" style={{ padding: '28px 12px' }}>
-                        <div className="empty-title">No scheduled messages yet</div>
-                        <div className="empty-desc">Create your first message item for this campaign.</div>
-                    </div>
-                ) : (
-                    <div className="table-wrapper">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>#</th>
-                                    <th>Title</th>
-                                    <th>Status</th>
-                                    <th>Scheduled</th>
-                                    <th>Sent</th>
-                                    <th>Failed</th>
-                                    <th>Queued</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {items.map((item) => (
-                                    <tr key={item.id}>
-                                        <td>{item.position}</td>
-                                        <td style={{ maxWidth: 260 }}>
-                                            <div style={{ fontWeight: 500 }}>{item.title || `Message ${item.position}`}</div>
-                                            <div style={{ fontSize: 12, color: 'var(--clr-text-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                {item.message_body}
-                                            </div>
-                                        </td>
-                                        <td><StatusBadge status={item.status} /></td>
-                                        <td>{new Date(item.scheduled_at).toLocaleString()}</td>
-                                        <td className="text-green">{Number(item.sent_messages || 0).toLocaleString()}</td>
-                                        <td className="text-red">{Number(item.failed_messages || 0).toLocaleString()}</td>
-                                        <td>{Number(item.queued_messages || 0).toLocaleString()}</td>
-                                        <td>
-                                            <div style={{ display: 'flex', gap: 8 }}>
-                                                {item.can_edit ? (
-                                                    <button className="btn btn-secondary btn-sm" type="button" onClick={() => startEdit(item)}>
-                                                        <Edit3 size={13} /> Edit
-                                                    </button>
-                                                ) : (
-                                                    <button className="btn btn-secondary btn-sm" type="button" onClick={() => cloneItem(item.id)} disabled={saving}>
-                                                        <Copy size={13} /> Clone
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </div>
-
-            {editingId && (
-                <div className="card" style={{ marginTop: 20 }}>
-                    <div style={{ fontWeight: 600, marginBottom: 12 }}>Edit Scheduled Message</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                        <div className="form-group">
-                            <label className="form-label">Title</label>
-                            <input className="form-input" value={editForm.title} onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))} />
-                        </div>
-                        <div className="form-group">
-                            <label className="form-label">Schedule Date & Time</label>
-                            <input type="datetime-local" className="form-input" value={editForm.scheduled_at} onChange={(e) => setEditForm((p) => ({ ...p, scheduled_at: e.target.value }))} />
-                        </div>
-                    </div>
-                    <div className="form-group" style={{ marginTop: 10 }}>
-                        <label className="form-label">Message Body</label>
-                        <textarea className="form-textarea" style={{ minHeight: 120 }} value={editForm.message_body} onChange={(e) => setEditForm((p) => ({ ...p, message_body: e.target.value }))} />
-                    </div>
-                    <div style={{ marginTop: 12, display: 'flex', gap: 10 }}>
-                        <button className="btn btn-primary" type="button" onClick={() => saveEdit(editingId)} disabled={saving}>
-                            <Save size={14} /> Save Changes
-                        </button>
-                        <button className="btn btn-secondary" type="button" onClick={() => setEditingId(null)}>
-                            Cancel
-                        </button>
-                    </div>
                 </div>
-            )}
+
+                <div className="card" style={{ position: 'sticky', top: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <div style={{ fontWeight: 600 }}>Message Details</div>
+                        {selectedItem && <StatusBadge status={selectedItem.status} />}
+                    </div>
+
+                    {!selectedItem ? (
+                        <div className="empty-state" style={{ padding: '28px 10px' }}>
+                            <div className="empty-title">Select a timeline message</div>
+                            <div className="empty-desc">Choose a message on the left to view or edit details.</div>
+                        </div>
+                    ) : (
+                        <>
+                            <div style={{ border: '1px solid var(--clr-border)', borderRadius: 12, padding: 12, background: 'var(--clr-surface-2)', marginBottom: 14 }}>
+                                <div style={{ fontWeight: 600, marginBottom: 4 }}>{selectedItem.title || `Message ${selectedItem.position}`}</div>
+                                <div style={{ fontSize: 12, color: 'var(--clr-text-3)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Clock3 size={12} /> {new Date(selectedItem.scheduled_at).toLocaleString()}</span>
+                                    <span>•</span>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Users size={12} /> Queued {Number(selectedItem.queued_messages || 0).toLocaleString()}</span>
+                                </div>
+                            </div>
+
+                            {editingId === selectedItem.id ? (
+                                <>
+                                    <div className="form-group">
+                                        <label className="form-label">Title</label>
+                                        <input className="form-input" value={editForm.title} onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))} />
+                                    </div>
+                                    <div className="form-group" style={{ marginTop: 10 }}>
+                                        <label className="form-label">Schedule Date &amp; Time</label>
+                                        <input type="datetime-local" className="form-input" value={editForm.scheduled_at} onChange={(e) => setEditForm((p) => ({ ...p, scheduled_at: e.target.value }))} />
+                                    </div>
+                                    <div className="form-group" style={{ marginTop: 10 }}>
+                                        <label className="form-label">Message Body</label>
+                                        <textarea className="form-textarea" style={{ minHeight: 120 }} value={editForm.message_body} onChange={(e) => setEditForm((p) => ({ ...p, message_body: e.target.value }))} />
+                                    </div>
+                                    <div style={{ marginTop: 12, display: 'flex', gap: 10 }}>
+                                        <button className="btn btn-primary" type="button" onClick={() => saveEdit(selectedItem.id)} disabled={saving}>
+                                            <Save size={14} /> Save Changes
+                                        </button>
+                                        <button className="btn btn-secondary" type="button" onClick={() => setEditingId(null)}>
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.6, color: 'var(--clr-text-2)', border: '1px solid var(--clr-border)', borderRadius: 12, padding: 12, background: 'var(--clr-surface)' }}>
+                                        {selectedItem.message_body}
+                                    </div>
+                                    <div style={{ marginTop: 14, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                        {selectedItem.can_edit ? (
+                                            <button className="btn btn-primary" type="button" onClick={() => startEdit(selectedItem)}>
+                                                <Edit3 size={14} /> Edit Message
+                                            </button>
+                                        ) : (
+                                            <button className="btn btn-secondary" type="button" onClick={() => cloneItem(selectedItem.id)} disabled={saving}>
+                                                <Copy size={14} /> Clone (+24h)
+                                            </button>
+                                        )}
+                                    </div>
+                                </>
+                            )}
+                        </>
+                    )}
+                </div>
+            </div>
         </>
     );
 }
