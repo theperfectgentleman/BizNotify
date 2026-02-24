@@ -192,9 +192,15 @@ export default function CampaignItemsPage() {
 
     useEffect(() => {
         const handleClickOutside = (event) => {
-            if (!campaignDropdownRef.current) return;
-            if (!campaignDropdownRef.current.contains(event.target)) {
+            if (campaignDropdownRef.current && !campaignDropdownRef.current.contains(event.target)) {
                 setShowCampaignDropdown(false);
+            }
+            if (
+                showCampaignForm
+                && campaignCardRef.current
+                && !campaignCardRef.current.contains(event.target)
+            ) {
+                setShowCampaignForm(false);
             }
         };
 
@@ -202,7 +208,7 @@ export default function CampaignItemsPage() {
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, []);
+    }, [showCampaignForm]);
 
     const toggleGroup = (id) => {
         setCreateForm((prev) => ({
@@ -340,7 +346,7 @@ export default function CampaignItemsPage() {
         <div className="campaign-page-wrapper">
             {/* Header */}
             <div className="page-header" style={{ marginBottom: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 20 }}>
                     <div>
                         <button 
                             className="btn btn-ghost btn-sm" 
@@ -371,6 +377,25 @@ export default function CampaignItemsPage() {
                             Orchestrate multi-channel messaging flows for your audience.
                         </p>
                     </div>
+
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'stretch' }}>
+                        <div className="stat-card" style={{ minWidth: 96, padding: '10px 12px' }}>
+                            <div className="stat-label" style={{ fontSize: 11 }}>Total</div>
+                            <div className="stat-value" style={{ fontSize: 20 }}>{timelineStats.total}</div>
+                        </div>
+                        <div className="stat-card" style={{ minWidth: 96, padding: '10px 12px' }}>
+                            <div className="stat-label" style={{ fontSize: 11 }}>Queued</div>
+                            <div className="stat-value" style={{ fontSize: 20, color: 'var(--clr-amber)' }}>{timelineStats.queued}</div>
+                        </div>
+                        <div className="stat-card" style={{ minWidth: 96, padding: '10px 12px' }}>
+                            <div className="stat-label" style={{ fontSize: 11 }}>Sent</div>
+                            <div className="stat-value" style={{ fontSize: 20, color: 'var(--clr-green)' }}>{timelineStats.sent}</div>
+                        </div>
+                        <div className="stat-card" style={{ minWidth: 96, padding: '10px 12px' }}>
+                            <div className="stat-label" style={{ fontSize: 11 }}>Failed</div>
+                            <div className="stat-value" style={{ fontSize: 20, color: 'var(--clr-red)' }}>{timelineStats.failed}</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -378,7 +403,7 @@ export default function CampaignItemsPage() {
             <div className="campaign-layout">
                 
                 {/* ── LEFT COLUMN: WORKSPACE (Campaign + Message Editor) ── */}
-                <div className="campaign-sidebar scroll-y" style={{ position: 'relative' }}>
+                <div className="campaign-sidebar" style={{ position: 'relative' }}>
                     
                     {/* Campaign Card - Collapsible & Floating */}
                     <div 
@@ -621,7 +646,7 @@ export default function CampaignItemsPage() {
                         </div>
 
                         {/* CONTENT AREA: Either Form or Read-only View */}
-                        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4 }}>
+                        <div style={{ flex: 1 }}>
                             {showCreateMessage ? (
                                 <form onSubmit={createItem}>
                                     <div style={{ marginBottom: 20 }}>
@@ -857,7 +882,7 @@ export default function CampaignItemsPage() {
 
                                     <div style={{ marginTop: 40, paddingTop: 20, borderTop: '1px solid var(--clr-border)' }}>
                                         <button className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }} disabled>
-                                            <Edit3 size={16} style={{ marginRight: 8 }} /> Edit Configuration
+                                            <Edit3 size={16} style={{ marginRight: 8 }} /> Edit
                                         </button>
                                         <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--clr-text-3)', marginTop: 8 }}>
                                             Adjustments disabled for {selectedItem.status} messages.
@@ -881,7 +906,7 @@ export default function CampaignItemsPage() {
 
 
                 {/* ── RIGHT COLUMN: TIMELINE DASHBOARD ── */}
-                <div className="timeline-container scroll-y">
+                <div className="timeline-container">
                     
                     {/* Timeline Flow */}
                     <div className="panel-card" style={{ minHeight: 400 }}>

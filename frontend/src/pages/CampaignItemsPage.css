@@ -4,8 +4,8 @@
 .campaign-page-wrapper {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 64px); /* Subtract topbar height */
-  overflow: hidden;
+  min-height: calc(100vh - 64px); /* Subtract topbar height */
+  overflow: visible;
   padding: 24px;
 }
 
@@ -14,8 +14,8 @@
   grid-template-columns: 55% 1fr; /* Expanded left column (was 45%) */
   gap: 24px;
   flex: 1;
-  min-height: 0; /* Necessary for nested scrolling */
-  overflow: hidden;
+  min-height: 0;
+  overflow: visible;
 }
 
 @media (max-width: 1024px) {
