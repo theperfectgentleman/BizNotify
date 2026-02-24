@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import PropTypes from 'prop-types';
-import { Plus, Search, Upload, Trash2, Tag, X, ChevronLeft, ChevronRight, Download, Save, CheckCircle2, XCircle } from 'lucide-react';
+import { Plus, Search, Upload, Trash2, Tag, X, ChevronLeft, ChevronRight, ChevronDown, Download, Save, CheckCircle2, XCircle } from 'lucide-react';
 import './ContactsPage.css';
 
 function downloadCsvTemplate() {
@@ -35,6 +35,83 @@ function StageDots({ stage }) {
 
 StageDots.propTypes = {
     stage: PropTypes.number,
+};
+
+function GroupsMultiSelect({ groups, value, onChange, placeholder = 'Select groups' }) {
+    const [open, setOpen] = useState(false);
+    const wrapperRef = useRef(null);
+
+    useEffect(() => {
+        const handleOutsideClick = (event) => {
+            if (!wrapperRef.current) return;
+            if (!wrapperRef.current.contains(event.target)) {
+                setOpen(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleOutsideClick);
+        return () => document.removeEventListener('mousedown', handleOutsideClick);
+    }, []);
+
+    const selectedNames = groups
+        .filter((group) => value.includes(group.id))
+        .map((group) => group.name);
+
+    const displayText = selectedNames.length > 0
+        ? selectedNames.join(', ')
+        : placeholder;
+
+    const toggleGroup = (groupId) => {
+        if (value.includes(groupId)) {
+            onChange(value.filter((id) => id !== groupId));
+        } else {
+            onChange([...value, groupId]);
+        }
+    };
+
+    return (
+        <div className="contacts-multiselect" ref={wrapperRef}>
+            <button
+                type="button"
+                className="contacts-multiselect-trigger"
+                onClick={() => setOpen((prev) => !prev)}
+                title={selectedNames.join(', ')}
+                aria-label="Select groups"
+            >
+                <span className="contacts-multiselect-text">{displayText}</span>
+                <ChevronDown size={14} className="contacts-multiselect-chevron" />
+            </button>
+
+            {open && (
+                <div className="contacts-multiselect-menu">
+                    {groups.length === 0 ? (
+                        <div className="contacts-multiselect-empty">No groups</div>
+                    ) : (
+                        groups.map((group) => (
+                            <label key={group.id} className="contacts-multiselect-option">
+                                <input
+                                    type="checkbox"
+                                    checked={value.includes(group.id)}
+                                    onChange={() => toggleGroup(group.id)}
+                                />
+                                <span>{group.name}</span>
+                            </label>
+                        ))
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+GroupsMultiSelect.propTypes = {
+    groups: PropTypes.arrayOf(PropTypes.shape({
+        id: PropTypes.string,
+        name: PropTypes.string,
+    })),
+    value: PropTypes.arrayOf(PropTypes.string),
+    onChange: PropTypes.func.isRequired,
+    placeholder: PropTypes.string,
 };
 
 function ImportModal({ onClose, onSaved, groups }) {
@@ -597,19 +674,12 @@ export default function ContactsPage() {
                                     />
                                 </td>
                                 <td>
-                                    <select
-                                        multiple
-                                        className="form-select contacts-cell-select"
+                                    <GroupsMultiSelect
+                                        groups={groups}
                                         value={inlineForm.group_ids}
-                                        onChange={(e) => {
-                                            const nextValues = Array.from(e.target.selectedOptions).map((option) => option.value);
-                                            setInlineForm((prev) => ({ ...prev, group_ids: nextValues }));
-                                        }}
-                                    >
-                                        {groups.map((group) => (
-                                            <option key={group.id} value={group.id}>{group.name}</option>
-                                        ))}
-                                    </select>
+                                        onChange={(nextValues) => setInlineForm((prev) => ({ ...prev, group_ids: nextValues }))}
+                                        placeholder="Select groups"
+                                    />
                                 </td>
                                 <td><span className="text-muted">—</span></td>
                                 <td><span className="text-muted">Now</span></td>
@@ -651,14 +721,12 @@ export default function ContactsPage() {
                                         />
                                     </td>
                                     <td>
-                                        <div
-                                            title={(c.groups || []).map((group) => group.name).join(', ')}
-                                            className="contacts-group-text"
-                                        >
-                                            {(c.groups || []).length > 0
-                                                ? (c.groups || []).map((group) => group.name).join(', ')
-                                                : '—'}
-                                        </div>
+                                        <GroupsMultiSelect
+                                            groups={groups}
+                                            value={rowEdits[c.id]?.group_ids || []}
+                                            onChange={(nextValues) => updateRowField(c.id, 'group_ids', nextValues)}
+                                            placeholder="No groups"
+                                        />
                                     </td>
                                     <td>
                                         {c.opt_out ? (
