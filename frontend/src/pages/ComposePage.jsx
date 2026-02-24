@@ -173,24 +173,49 @@ export default function ComposePage() {
         setLoading(true);
         try {
             if (mode === 'campaign') {
-                const payload = {
+                const { data: campaignData } = await api.post('/messages/campaigns', {
                     title: form.title,
-                    message_body: form.message_body,
                     channel: form.channel,
-                    sender_id: form.sender_id || undefined,
-                    message_type: form.message_type,
-                    group_ids: form.group_ids,
-                    per_group_messages: form.campaign_message_mode === 'per_group'
-                        ? form.group_ids.map(groupId => ({
-                            group_id: groupId,
-                            message_body: (form.group_messages[groupId] || '').trim(),
-                        }))
-                        : undefined,
-                    scheduled_at: form.sendMode === 'schedule' && form.scheduled_at ? form.scheduled_at : undefined,
-                };
-                const { data } = await api.post('/messages/send', payload);
-                toast.success(`Campaign queued! ${data.queued} messages scheduled.`);
-                navigate('/app/analytics');
+                });
+
+                const campaignId = campaignData?.campaign?.id;
+                if (!campaignId) {
+                    throw new Error('Campaign creation failed');
+                }
+
+                const scheduledAt = form.sendMode === 'schedule' && form.scheduled_at
+                    ? form.scheduled_at
+                    : new Date().toISOString();
+
+                if (form.campaign_message_mode === 'single') {
+                    await api.post(`/messages/campaigns/${campaignId}/items`, {
+                        title: form.title,
+                        message_body: form.message_body,
+                        scheduled_at: scheduledAt,
+                        group_ids: form.group_ids,
+                        channel: form.channel,
+                        sender_id: form.sender_id || undefined,
+                        message_type: form.message_type,
+                    });
+                } else {
+                    await Promise.all(
+                        form.group_ids.map((groupId) => {
+                            const groupName = selectedGroups.find(g => g.id === groupId)?.name;
+                            return api.post(`/messages/campaigns/${campaignId}/items`, {
+                                title: `${form.title} - ${groupName || 'Segment'}`,
+                                message_body: (form.group_messages[groupId] || '').trim(),
+                                scheduled_at: scheduledAt,
+                                group_ids: [groupId],
+                                channel: form.channel,
+                                sender_id: form.sender_id || undefined,
+                                message_type: form.message_type,
+                            });
+                        })
+                    );
+                }
+
+                toast.success('Campaign series created. Add or edit scheduled messages as needed.');
+                navigate(`/app/campaigns/${campaignId}/items`);
             } else {
                 const payload = {
                     target_phones: form.target_phones,
@@ -219,10 +244,10 @@ export default function ComposePage() {
                 <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
                     <div>
                         <div className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                            {mode === 'campaign' ? 'Compose Campaign' : 'Send Instant Message'}
+                            {mode === 'campaign' ? 'Create Campaign Series' : 'Send Instant Message'}
                         </div>
                         <div className="page-subtitle">
-                            {mode === 'campaign' ? 'Plan and schedule your message for selected audience groups' : 'Quick send to selected groups and manually entered numbers via SMS or WhatsApp'}
+                            {mode === 'campaign' ? 'Create a campaign and schedule its first message. You can add or edit more messages next.' : 'Quick send to selected groups and manually entered numbers via SMS or WhatsApp'}
                         </div>
                     </div>
                     <div style={{ minWidth: 220 }}>
@@ -358,6 +383,9 @@ export default function ComposePage() {
                                         Per-Group Messages
                                     </button>
                                 </div>
+                                <div style={{ marginTop: 8, fontSize: 12, color: 'var(--clr-text-3)' }}>
+                                    This creates the first scheduled item in your campaign series.
+                                </div>
                             </div>
                         )}
 
@@ -427,7 +455,7 @@ export default function ComposePage() {
                     {/* Schedule toggle */}
                     {mode === 'campaign' && (
                         <div className="card">
-                            <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 14 }}>Send Timing</div>
+                            <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 14 }}>First Message Timing</div>
                             <div className="toggle-group" style={{ marginBottom: 16 }}>
                                 <button type="button" className={`toggle-btn ${form.sendMode === 'now' ? 'active' : ''}`} onClick={() => setForm(f => ({ ...f, sendMode: 'now' }))}>
                                     ⚡ Send Now
@@ -636,7 +664,7 @@ export default function ComposePage() {
                     <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '14px' }} disabled={loading}>
                         {loading
                             ? <><span className="spinner" style={{ width: 16, height: 16 }} /> {mode === 'campaign' ? 'Queuing...' : 'Queuing...'}</>
-                            : <><Send size={16} /> {mode === 'instant' ? 'Send Instant Message' : form.sendMode === 'schedule' ? 'Schedule Campaign' : 'Send Campaign'}</>
+                            : <><Send size={16} /> {mode === 'instant' ? 'Send Instant Message' : form.sendMode === 'schedule' ? 'Create & Schedule Series' : 'Create Series (Start Now)'}</>
                         }
                     </button>
                 </div>
