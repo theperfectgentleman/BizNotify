@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-import { Plus, Search, Upload, Trash2, Tag, X, ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import PropTypes from 'prop-types';
+import { Plus, Search, Upload, Trash2, Tag, X, ChevronLeft, ChevronRight, Download, Save } from 'lucide-react';
 
 function downloadCsvTemplate() {
     const headers = 'phone_number,first_name,last_name';
@@ -26,89 +27,9 @@ function StatusDot({ optOut }) {
     );
 }
 
-function AddContactModal({ onClose, onSaved, groups }) {
-    const [form, setForm] = useState({ phone_number: '', first_name: '', last_name: '', group_ids: [] });
-    const [loading, setLoading] = useState(false);
-
-    const handle = (e) => setForm({ ...form, [e.target.name]: e.target.value });
-
-    const toggleGroup = (id) => {
-        setForm(f => ({
-            ...f,
-            group_ids: f.group_ids.includes(id)
-                ? f.group_ids.filter(g => g !== id)
-                : [...f.group_ids, id]
-        }));
-    };
-
-    const submit = async (e) => {
-        e.preventDefault();
-        setLoading(true);
-        try {
-            await api.post('/contacts', form);
-            toast.success('Contact added');
-            onSaved();
-            onClose();
-        } catch (err) {
-            toast.error(err.response?.data?.error || 'Failed to add contact');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-            <div className="modal">
-                <div className="modal-header">
-                    <div className="modal-title">Add Contact</div>
-                    <button className="btn btn-icon btn-ghost" onClick={onClose}><X size={18} /></button>
-                </div>
-                <form onSubmit={submit}>
-                    <div className="modal-body">
-                        <div className="form-group">
-                            <label className="form-label">Phone Number *</label>
-                            <input className="form-input" name="phone_number" placeholder="08012345678" value={form.phone_number} onChange={handle} required />
-                            <div className="form-hint">Numbers are auto-normalized to E.164 format</div>
-                        </div>
-                        <div className="grid-2">
-                            <div className="form-group">
-                                <label className="form-label">First Name</label>
-                                <input className="form-input" name="first_name" placeholder="John" value={form.first_name} onChange={handle} />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Last Name</label>
-                                <input className="form-input" name="last_name" placeholder="Doe" value={form.last_name} onChange={handle} />
-                            </div>
-                        </div>
-                        {groups.length > 0 && (
-                            <div className="form-group">
-                                <label className="form-label">Add to Groups</label>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                    {groups.map(g => (
-                                        <button
-                                            key={g.id} type="button"
-                                            onClick={() => toggleGroup(g.id)}
-                                            className={`btn btn-sm ${form.group_ids.includes(g.id) ? 'btn-primary' : 'btn-secondary'}`}
-                                        >
-                                            {g.name}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                    <div className="modal-footer">
-                        <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-                        <button type="submit" className="btn btn-primary" disabled={loading}>
-                            {loading ? <span className="spinner" style={{ width: 14, height: 14 }} /> : null}
-                            Add Contact
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    );
-}
+StatusDot.propTypes = {
+    optOut: PropTypes.bool,
+};
 
 // ── Stage badge helper ───────────────────────────────────────────────────────
 function StageDots({ stage }) {
@@ -124,6 +45,10 @@ function StageDots({ stage }) {
         </div>
     );
 }
+
+StageDots.propTypes = {
+    stage: PropTypes.number,
+};
 
 function ImportModal({ onClose, onSaved, groups }) {
     // stage: 1 = pick file, 2 = prescan preview, 3 = import result
@@ -184,15 +109,6 @@ function ImportModal({ onClose, onSaved, groups }) {
         setStage(1); setFile(null); setScan(null); setResult(null);
         if (fileRef.current) fileRef.current.value = '';
     };
-
-    const ColPill = ({ label, value }) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-            <span style={{ color: 'var(--clr-text-3)' }}>{label}:</span>
-            {value
-                ? <span style={{ color: 'var(--clr-accent)', fontWeight: 600 }}>{value}</span>
-                : <span style={{ color: 'var(--clr-text-3)', fontStyle: 'italic' }}>not found</span>}
-        </div>
-    );
 
     return (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -276,9 +192,18 @@ function ImportModal({ onClose, onSaved, groups }) {
                                             Detected Column Mapping
                                         </div>
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 24px' }}>
-                                            <ColPill label="Phone" value={scan.detectedCols?.phone} />
-                                            <ColPill label="First Name" value={scan.detectedCols?.firstName} />
-                                            <ColPill label="Last Name" value={scan.detectedCols?.lastName} />
+                                            {[
+                                                { label: 'Phone', value: scan.detectedCols?.phone },
+                                                { label: 'First Name', value: scan.detectedCols?.firstName },
+                                                { label: 'Last Name', value: scan.detectedCols?.lastName },
+                                            ].map((column) => (
+                                                <div key={column.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                                                    <span style={{ color: 'var(--clr-text-3)' }}>{column.label}:</span>
+                                                    {column.value
+                                                        ? <span style={{ color: 'var(--clr-accent)', fontWeight: 600 }}>{column.value}</span>
+                                                        : <span style={{ color: 'var(--clr-text-3)', fontStyle: 'italic' }}>not found</span>}
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
 
@@ -402,6 +327,16 @@ function ImportModal({ onClose, onSaved, groups }) {
     );
 }
 
+ImportModal.propTypes = {
+    onClose: PropTypes.func.isRequired,
+    onSaved: PropTypes.func.isRequired,
+    groups: PropTypes.arrayOf(PropTypes.shape({
+        id: PropTypes.string,
+        name: PropTypes.string,
+        contact_count: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    })),
+};
+
 export default function ContactsPage() {
     const [contacts, setContacts] = useState([]);
     const [groups, setGroups] = useState([]);
@@ -411,12 +346,20 @@ export default function ContactsPage() {
     const [groupFilter, setGroupFilter] = useState('');
     const [loading, setLoading] = useState(true);
     const [selected, setSelected] = useState([]);
-    const [showAdd, setShowAdd] = useState(false);
     const [showImport, setShowImport] = useState(false);
     const [bulkGroupId, setBulkGroupId] = useState('');
+    const [rowEdits, setRowEdits] = useState({});
+    const [rowSaving, setRowSaving] = useState({});
+    const [inlineForm, setInlineForm] = useState({
+        phone_number: '',
+        first_name: '',
+        last_name: '',
+        group_ids: [],
+    });
+    const [addingInline, setAddingInline] = useState(false);
     const PER_PAGE = 50;
 
-    const fetchContacts = async () => {
+    const fetchContacts = useCallback(async () => {
         setLoading(true);
         try {
             const params = { page, limit: PER_PAGE };
@@ -425,13 +368,28 @@ export default function ContactsPage() {
             const { data } = await api.get('/contacts', { params });
             setContacts(data.contacts);
             setTotal(data.total);
+
+            setRowEdits((prev) => {
+                const next = { ...prev };
+                for (const contact of data.contacts) {
+                    if (!next[contact.id]) {
+                        next[contact.id] = {
+                            phone_number: contact.phone_number || '',
+                            first_name: contact.first_name || '',
+                            last_name: contact.last_name || '',
+                            group_ids: (contact.groups || []).map((group) => group.id),
+                        };
+                    }
+                }
+                return next;
+            });
         } finally {
             setLoading(false);
         }
-    };
+    }, [groupFilter, page, search]);
 
     useEffect(() => { api.get('/groups').then(r => setGroups(r.data)); }, []);
-    useEffect(() => { fetchContacts(); }, [page, search, groupFilter]);
+    useEffect(() => { fetchContacts(); }, [fetchContacts]);
 
     const deleteContact = async (id) => {
         if (!confirm('Delete this contact?')) return;
@@ -461,6 +419,68 @@ export default function ContactsPage() {
         setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
     };
 
+    const updateRowField = (contactId, field, value) => {
+        setRowEdits((prev) => ({
+            ...prev,
+            [contactId]: {
+                ...prev[contactId],
+                [field]: value,
+            },
+        }));
+    };
+
+    const updateRowGroups = (contactId, selectedValues) => {
+        updateRowField(contactId, 'group_ids', selectedValues);
+    };
+
+    const saveRow = async (contactId) => {
+        const row = rowEdits[contactId];
+        if (!row) return;
+
+        if (!String(row.phone_number || '').trim()) {
+            return toast.error('Phone number is required');
+        }
+
+        setRowSaving((prev) => ({ ...prev, [contactId]: true }));
+        try {
+            await api.patch(`/contacts/${contactId}`, {
+                phone_number: row.phone_number,
+                first_name: row.first_name,
+                last_name: row.last_name,
+                group_ids: row.group_ids,
+            });
+            toast.success('Contact updated');
+            await fetchContacts();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Update failed');
+        } finally {
+            setRowSaving((prev) => ({ ...prev, [contactId]: false }));
+        }
+    };
+
+    const addInlineContact = async () => {
+        if (!String(inlineForm.phone_number || '').trim()) {
+            return toast.error('Phone number is required');
+        }
+
+        setAddingInline(true);
+        try {
+            await api.post('/contacts', inlineForm);
+            toast.success('Contact added');
+            setInlineForm({
+                phone_number: '',
+                first_name: '',
+                last_name: '',
+                group_ids: [],
+            });
+            await fetchContacts();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Failed to add contact');
+        } finally {
+            setAddingInline(false);
+        }
+    };
+
     const toggleAll = () => {
         setSelected(s => s.length === contacts.length ? [] : contacts.map(c => c.id));
     };
@@ -477,9 +497,6 @@ export default function ContactsPage() {
                 <div className="page-header-actions">
                     <button className="btn btn-secondary" onClick={() => setShowImport(true)}>
                         <Upload size={15} /> Bulk Import
-                    </button>
-                    <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
-                        <Plus size={15} /> Add Contact
                     </button>
                 </div>
             </div>
@@ -531,7 +548,8 @@ export default function ContactsPage() {
                             <tr>
                                 <th><input type="checkbox" checked={selected.length === contacts.length} onChange={toggleAll} /></th>
                                 <th>Phone</th>
-                                <th>Name</th>
+                                <th>First Name</th>
+                                <th>Last Name</th>
                                 <th>Groups</th>
                                 <th>Status</th>
                                 <th>Added</th>
@@ -539,18 +557,100 @@ export default function ContactsPage() {
                             </tr>
                         </thead>
                         <tbody>
+                            <tr style={{ background: 'var(--clr-surface-2)' }}>
+                                <td>
+                                    <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 6, background: 'var(--clr-accent-dim)', color: 'var(--clr-accent)' }}>
+                                        <Plus size={14} />
+                                    </div>
+                                </td>
+                                <td>
+                                    <input
+                                        className="form-input"
+                                        placeholder="+2348012345678"
+                                        value={inlineForm.phone_number}
+                                        onChange={(e) => setInlineForm((prev) => ({ ...prev, phone_number: e.target.value }))}
+                                    />
+                                </td>
+                                <td>
+                                    <input
+                                        className="form-input"
+                                        placeholder="First name"
+                                        value={inlineForm.first_name}
+                                        onChange={(e) => setInlineForm((prev) => ({ ...prev, first_name: e.target.value }))}
+                                    />
+                                </td>
+                                <td>
+                                    <input
+                                        className="form-input"
+                                        placeholder="Last name"
+                                        value={inlineForm.last_name}
+                                        onChange={(e) => setInlineForm((prev) => ({ ...prev, last_name: e.target.value }))}
+                                    />
+                                </td>
+                                <td>
+                                    <select
+                                        multiple
+                                        className="form-select"
+                                        style={{ minWidth: 180, minHeight: 84 }}
+                                        value={inlineForm.group_ids}
+                                        onChange={(e) => {
+                                            const nextValues = Array.from(e.target.selectedOptions).map((option) => option.value);
+                                            setInlineForm((prev) => ({ ...prev, group_ids: nextValues }));
+                                        }}
+                                    >
+                                        {groups.map((group) => (
+                                            <option key={group.id} value={group.id}>{group.name}</option>
+                                        ))}
+                                    </select>
+                                </td>
+                                <td><span className="text-muted">—</span></td>
+                                <td><span className="text-muted">Now</span></td>
+                                <td>
+                                    <button className="btn btn-primary btn-sm" onClick={addInlineContact} disabled={addingInline}>
+                                        {addingInline ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <><Save size={14} /> Add</>}
+                                    </button>
+                                </td>
+                            </tr>
+
                             {contacts.map(c => (
                                 <tr key={c.id}>
                                     <td><input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggleSelect(c.id)} /></td>
-                                    <td className="font-mono">{c.phone_number}</td>
-                                    <td>{[c.first_name, c.last_name].filter(Boolean).join(' ') || <span className="text-muted">—</span>}</td>
                                     <td>
-                                        {c.groups?.length > 0
-                                            ? c.groups.map(g => (
-                                                <span key={g.id} style={{ display: 'inline-block', fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'var(--clr-surface-3)', color: 'var(--clr-text-2)', marginRight: 4 }}>{g.name}</span>
-                                            ))
-                                            : <span className="text-muted">—</span>
-                                        }
+                                        <input
+                                            className="form-input font-mono"
+                                            value={rowEdits[c.id]?.phone_number || ''}
+                                            onChange={(e) => updateRowField(c.id, 'phone_number', e.target.value)}
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            className="form-input"
+                                            value={rowEdits[c.id]?.first_name || ''}
+                                            onChange={(e) => updateRowField(c.id, 'first_name', e.target.value)}
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            className="form-input"
+                                            value={rowEdits[c.id]?.last_name || ''}
+                                            onChange={(e) => updateRowField(c.id, 'last_name', e.target.value)}
+                                        />
+                                    </td>
+                                    <td>
+                                        <select
+                                            multiple
+                                            className="form-select"
+                                            style={{ minWidth: 180, minHeight: 84 }}
+                                            value={rowEdits[c.id]?.group_ids || []}
+                                            onChange={(e) => {
+                                                const nextValues = Array.from(e.target.selectedOptions).map((option) => option.value);
+                                                updateRowGroups(c.id, nextValues);
+                                            }}
+                                        >
+                                            {groups.map((group) => (
+                                                <option key={group.id} value={group.id}>{group.name}</option>
+                                            ))}
+                                        </select>
                                     </td>
                                     <td>
                                         <StatusDot optOut={c.opt_out} />
@@ -558,6 +658,14 @@ export default function ContactsPage() {
                                     </td>
                                     <td style={{ fontSize: 13 }}>{new Date(c.created_at).toLocaleDateString()}</td>
                                     <td>
+                                        <button
+                                            className="btn btn-secondary btn-sm"
+                                            style={{ marginRight: 8 }}
+                                            onClick={() => saveRow(c.id)}
+                                            disabled={rowSaving[c.id]}
+                                        >
+                                            {rowSaving[c.id] ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <Save size={14} />}
+                                        </button>
                                         <button className="btn btn-icon btn-danger btn-sm" onClick={() => deleteContact(c.id)}>
                                             <Trash2 size={14} />
                                         </button>
@@ -584,7 +692,6 @@ export default function ContactsPage() {
                 </div>
             )}
 
-            {showAdd && <AddContactModal onClose={() => setShowAdd(false)} onSaved={fetchContacts} groups={groups} />}
             {showImport && <ImportModal onClose={() => setShowImport(false)} onSaved={fetchContacts} groups={groups} />}
         </>
     );

@@ -100,6 +100,84 @@ router.post('/', requireAuth, async (req, res) => {
     }
 });
 
+// PATCH /contacts/:id - update single contact (including groups)
+router.patch('/:id', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { phone_number, first_name, last_name, metadata, group_ids } = req.body;
+
+        const client = await db.getClient();
+        try {
+            await client.query('BEGIN');
+
+            const { rows: existingRows } = await client.query(
+                'SELECT * FROM contacts WHERE id = $1',
+                [id]
+            );
+
+            const existing = existingRows[0];
+            if (!existing) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Contact not found' });
+            }
+
+            let normalizedPhone = existing.phone_number;
+            if (phone_number !== undefined) {
+                normalizedPhone = normalizePhone(phone_number);
+                if (!normalizedPhone || !isValidPhone(normalizedPhone)) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ error: 'Invalid phone number' });
+                }
+            }
+
+            const { rows: updatedRows } = await client.query(
+                `UPDATE contacts
+                 SET phone_number = $2,
+                     first_name = $3,
+                     last_name = $4,
+                     metadata = $5,
+                     updated_at = NOW()
+                 WHERE id = $1
+                 RETURNING *`,
+                [
+                    id,
+                    normalizedPhone,
+                    first_name !== undefined ? (first_name || null) : existing.first_name,
+                    last_name !== undefined ? (last_name || null) : existing.last_name,
+                    metadata !== undefined
+                        ? JSON.stringify(metadata || {})
+                        : existing.metadata,
+                ]
+            );
+
+            if (Array.isArray(group_ids)) {
+                await client.query('DELETE FROM contact_groups WHERE contact_id = $1', [id]);
+
+                for (const groupId of group_ids) {
+                    await client.query(
+                        `INSERT INTO contact_groups (contact_id, group_id)
+                         VALUES ($1, $2)
+                         ON CONFLICT DO NOTHING`,
+                        [id, groupId]
+                    );
+                }
+            }
+
+            await client.query('COMMIT');
+            return res.json(updatedRows[0]);
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
+    } catch (err) {
+        console.error('[contacts/PATCH]', err);
+        if (err.code === '23505') return res.status(409).json({ error: 'Contact with this phone number already exists' });
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 // DELETE /contacts/:id
 router.delete('/:id', requireAuth, async (req, res) => {
     try {
