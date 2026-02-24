@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import PropTypes from 'prop-types';
-import { Plus, Search, Upload, Trash2, Tag, X, ChevronLeft, ChevronRight, Download, Save } from 'lucide-react';
+import { Plus, Search, Upload, Trash2, Tag, X, ChevronLeft, ChevronRight, Download, Save, CheckCircle2, XCircle } from 'lucide-react';
+import './ContactsPage.css';
 
 function downloadCsvTemplate() {
     const headers = 'phone_number,first_name,last_name';
@@ -16,20 +17,6 @@ function downloadCsvTemplate() {
     a.click();
     URL.revokeObjectURL(url);
 }
-
-function StatusDot({ optOut }) {
-    return (
-        <span style={{
-            width: 8, height: 8, borderRadius: '50%', display: 'inline-block',
-            background: optOut ? 'var(--clr-red)' : 'var(--clr-green)',
-            marginRight: 6
-        }} />
-    );
-}
-
-StatusDot.propTypes = {
-    optOut: PropTypes.bool,
-};
 
 // ── Stage badge helper ───────────────────────────────────────────────────────
 function StageDots({ stage }) {
@@ -357,6 +344,7 @@ export default function ContactsPage() {
         group_ids: [],
     });
     const [addingInline, setAddingInline] = useState(false);
+    const inlinePhoneRef = useRef(null);
     const PER_PAGE = 50;
 
     const fetchContacts = useCallback(async () => {
@@ -429,10 +417,6 @@ export default function ContactsPage() {
         }));
     };
 
-    const updateRowGroups = (contactId, selectedValues) => {
-        updateRowField(contactId, 'group_ids', selectedValues);
-    };
-
     const saveRow = async (contactId) => {
         const row = rowEdits[contactId];
         if (!row) return;
@@ -494,15 +478,10 @@ export default function ContactsPage() {
                     <div className="page-title">Contacts</div>
                     <div className="page-subtitle">{total.toLocaleString()} contacts total</div>
                 </div>
-                <div className="page-header-actions">
-                    <button className="btn btn-secondary" onClick={() => setShowImport(true)}>
-                        <Upload size={15} /> Bulk Import
-                    </button>
-                </div>
             </div>
 
             {/* Filters */}
-            <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+            <div className="contacts-filters">
                 <div className="search-bar">
                     <Search size={15} />
                     <input
@@ -516,6 +495,22 @@ export default function ContactsPage() {
                     <option value="">All Groups</option>
                     {groups.map(g => <option key={g.id} value={g.id}>{g.name} ({g.contact_count})</option>)}
                 </select>
+                <button
+                    className="btn btn-icon btn-primary"
+                    onClick={() => inlinePhoneRef.current?.focus()}
+                    title="Add contact"
+                    aria-label="Add contact"
+                >
+                    <Plus size={15} />
+                </button>
+                <button
+                    className="btn btn-icon btn-secondary"
+                    onClick={() => setShowImport(true)}
+                    title="Bulk import"
+                    aria-label="Bulk import"
+                >
+                    <Upload size={15} />
+                </button>
             </div>
 
             {/* Bulk action bar */}
@@ -526,14 +521,27 @@ export default function ContactsPage() {
                         <option value="">Tag to group…</option>
                         {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                     </select>
-                    <button className="btn btn-primary btn-sm" disabled={!bulkGroupId} onClick={bulkTag}>
-                        <Tag size={13} /> Apply
+                    <button
+                        className="btn btn-icon btn-primary btn-sm"
+                        disabled={!bulkGroupId}
+                        onClick={bulkTag}
+                        title="Apply group tag"
+                        aria-label="Apply group tag"
+                    >
+                        <Tag size={13} />
                     </button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => setSelected([])}>Clear</button>
+                    <button
+                        className="btn btn-icon btn-ghost btn-sm"
+                        onClick={() => setSelected([])}
+                        title="Clear selection"
+                        aria-label="Clear selection"
+                    >
+                        <X size={13} />
+                    </button>
                 </div>
             )}
 
-            <div className="table-wrapper">
+            <div className="table-wrapper contacts-compact">
                 {loading ? (
                     <div className="loading-center"><span className="spinner" /></div>
                 ) : contacts.length === 0 ? (
@@ -557,7 +565,7 @@ export default function ContactsPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr style={{ background: 'var(--clr-surface-2)' }}>
+                            <tr className="contacts-inline-row">
                                 <td>
                                     <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 6, background: 'var(--clr-accent-dim)', color: 'var(--clr-accent)' }}>
                                         <Plus size={14} />
@@ -565,7 +573,8 @@ export default function ContactsPage() {
                                 </td>
                                 <td>
                                     <input
-                                        className="form-input"
+                                        ref={inlinePhoneRef}
+                                        className="form-input contacts-cell-input"
                                         placeholder="+2348012345678"
                                         value={inlineForm.phone_number}
                                         onChange={(e) => setInlineForm((prev) => ({ ...prev, phone_number: e.target.value }))}
@@ -573,7 +582,7 @@ export default function ContactsPage() {
                                 </td>
                                 <td>
                                     <input
-                                        className="form-input"
+                                        className="form-input contacts-cell-input"
                                         placeholder="First name"
                                         value={inlineForm.first_name}
                                         onChange={(e) => setInlineForm((prev) => ({ ...prev, first_name: e.target.value }))}
@@ -581,7 +590,7 @@ export default function ContactsPage() {
                                 </td>
                                 <td>
                                     <input
-                                        className="form-input"
+                                        className="form-input contacts-cell-input"
                                         placeholder="Last name"
                                         value={inlineForm.last_name}
                                         onChange={(e) => setInlineForm((prev) => ({ ...prev, last_name: e.target.value }))}
@@ -590,8 +599,7 @@ export default function ContactsPage() {
                                 <td>
                                     <select
                                         multiple
-                                        className="form-select"
-                                        style={{ minWidth: 180, minHeight: 84 }}
+                                        className="form-select contacts-cell-select"
                                         value={inlineForm.group_ids}
                                         onChange={(e) => {
                                             const nextValues = Array.from(e.target.selectedOptions).map((option) => option.value);
@@ -606,8 +614,14 @@ export default function ContactsPage() {
                                 <td><span className="text-muted">—</span></td>
                                 <td><span className="text-muted">Now</span></td>
                                 <td>
-                                    <button className="btn btn-primary btn-sm" onClick={addInlineContact} disabled={addingInline}>
-                                        {addingInline ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <><Save size={14} /> Add</>}
+                                    <button
+                                        className="btn btn-icon btn-primary btn-sm"
+                                        onClick={addInlineContact}
+                                        disabled={addingInline}
+                                        title="Add contact row"
+                                        aria-label="Add contact row"
+                                    >
+                                        {addingInline ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <Save size={14} />}
                                     </button>
                                 </td>
                             </tr>
@@ -617,58 +631,77 @@ export default function ContactsPage() {
                                     <td><input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggleSelect(c.id)} /></td>
                                     <td>
                                         <input
-                                            className="form-input font-mono"
+                                            className="form-input font-mono contacts-cell-input"
                                             value={rowEdits[c.id]?.phone_number || ''}
                                             onChange={(e) => updateRowField(c.id, 'phone_number', e.target.value)}
                                         />
                                     </td>
                                     <td>
                                         <input
-                                            className="form-input"
+                                            className="form-input contacts-cell-input"
                                             value={rowEdits[c.id]?.first_name || ''}
                                             onChange={(e) => updateRowField(c.id, 'first_name', e.target.value)}
                                         />
                                     </td>
                                     <td>
                                         <input
-                                            className="form-input"
+                                            className="form-input contacts-cell-input"
                                             value={rowEdits[c.id]?.last_name || ''}
                                             onChange={(e) => updateRowField(c.id, 'last_name', e.target.value)}
                                         />
                                     </td>
                                     <td>
-                                        <select
-                                            multiple
-                                            className="form-select"
-                                            style={{ minWidth: 180, minHeight: 84 }}
-                                            value={rowEdits[c.id]?.group_ids || []}
-                                            onChange={(e) => {
-                                                const nextValues = Array.from(e.target.selectedOptions).map((option) => option.value);
-                                                updateRowGroups(c.id, nextValues);
-                                            }}
+                                        <div
+                                            title={(c.groups || []).map((group) => group.name).join(', ')}
+                                            className="contacts-group-text"
                                         >
-                                            {groups.map((group) => (
-                                                <option key={group.id} value={group.id}>{group.name}</option>
-                                            ))}
-                                        </select>
+                                            {(c.groups || []).length > 0
+                                                ? (c.groups || []).map((group) => group.name).join(', ')
+                                                : '—'}
+                                        </div>
                                     </td>
                                     <td>
-                                        <StatusDot optOut={c.opt_out} />
-                                        {c.opt_out ? <span className="text-red text-xs">Opted out</span> : <span className="text-green text-xs">Active</span>}
+                                        {c.opt_out ? (
+                                            <span className="contacts-status-icon">
+                                                <XCircle
+                                                    size={15}
+                                                    color="var(--clr-red)"
+                                                    title="Opted out"
+                                                    aria-label="Opted out"
+                                                />
+                                            </span>
+                                        ) : (
+                                            <span className="contacts-status-icon">
+                                                <CheckCircle2
+                                                    size={15}
+                                                    color="var(--clr-green)"
+                                                    title="Active"
+                                                    aria-label="Active"
+                                                />
+                                            </span>
+                                        )}
                                     </td>
                                     <td style={{ fontSize: 13 }}>{new Date(c.created_at).toLocaleDateString()}</td>
                                     <td>
-                                        <button
-                                            className="btn btn-secondary btn-sm"
-                                            style={{ marginRight: 8 }}
-                                            onClick={() => saveRow(c.id)}
-                                            disabled={rowSaving[c.id]}
-                                        >
-                                            {rowSaving[c.id] ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <Save size={14} />}
-                                        </button>
-                                        <button className="btn btn-icon btn-danger btn-sm" onClick={() => deleteContact(c.id)}>
-                                            <Trash2 size={14} />
-                                        </button>
+                                        <div className="contacts-action-cell">
+                                            <button
+                                                className="btn btn-icon btn-secondary btn-sm"
+                                                onClick={() => saveRow(c.id)}
+                                                disabled={rowSaving[c.id]}
+                                                title="Save contact"
+                                                aria-label="Save contact"
+                                            >
+                                                {rowSaving[c.id] ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <Save size={14} />}
+                                            </button>
+                                            <button
+                                                className="btn btn-icon btn-danger btn-sm"
+                                                onClick={() => deleteContact(c.id)}
+                                                title="Delete contact"
+                                                aria-label="Delete contact"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}

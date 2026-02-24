@@ -1,0 +1,90 @@
+.contacts-filters {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.contacts-compact {
+  border-radius: var(--radius-md);
+}
+
+.contacts-compact table {
+  font-size: 13px;
+}
+
+.contacts-compact thead th {
+  padding: 8px 10px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+.contacts-compact tbody td {
+  padding: 8px 10px;
+}
+
+.contacts-compact thead th:first-child,
+.contacts-compact tbody td:first-child {
+  width: 44px;
+}
+
+.contacts-compact thead th:last-child,
+.contacts-compact tbody td:last-child {
+  width: 96px;
+}
+
+.contacts-inline-row {
+  background: var(--clr-surface-2);
+}
+
+.contacts-cell-input {
+  height: 34px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.contacts-cell-select {
+  min-width: 160px;
+  min-height: 52px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.contacts-group-text {
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.contacts-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.contacts-action-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-start;
+  white-space: nowrap;
+}
+
+.contacts-action-cell .btn-icon {
+  width: 30px;
+  height: 30px;
+}
+
+@media (max-width: 900px) {
+  .contacts-filters {
+    gap: 8px;
+  }
+
+  .contacts-cell-select {
+    min-width: 140px;
+  }
+}
