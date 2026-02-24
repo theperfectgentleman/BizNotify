@@ -854,13 +854,21 @@ export default function CampaignItemsPage() {
                                         </div>
                                     </div>
 
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '0.75fr 1.25fr', gap: 16, marginBottom: 24 }}>
                                         <div style={{ padding: 12, background: 'var(--clr-surface-2)', borderRadius: 10 }}>
                                             <div style={{ fontSize: 11, color: 'var(--clr-text-3)', marginBottom: 4 }}>Channel</div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
-                                                 {selectedItem.channel === 'whatsapp' ? <MessageCircle size={16} /> : <Smartphone size={16} />}
-                                                 {selectedItem.channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}
-                                            </div>
+                                            <span style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                padding: '4px 10px',
+                                                borderRadius: 999,
+                                                fontSize: 12,
+                                                fontWeight: 700,
+                                                background: selectedItem.channel === 'whatsapp' ? 'var(--clr-accent-dim)' : 'var(--clr-surface-3)',
+                                                color: selectedItem.channel === 'whatsapp' ? 'var(--clr-accent)' : 'var(--clr-text)'
+                                            }}>
+                                                {selectedItem.channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}
+                                            </span>
                                         </div>
                                         <div style={{ padding: 12, background: 'var(--clr-surface-2)', borderRadius: 10 }}>
                                             <div style={{ fontSize: 11, color: 'var(--clr-text-3)', marginBottom: 4 }}>Audience</div>
@@ -874,7 +882,8 @@ export default function CampaignItemsPage() {
                                         <div style={{ fontSize: 11, color: 'var(--clr-text-3)', textTransform: 'uppercase', marginBottom: 8 }}>Message Body</div>
                                         <div style={{ 
                                             background: 'var(--clr-surface-3)', padding: 16, borderRadius: 12, 
-                                            fontSize: 14, lineHeight: 1.6, color: 'var(--clr-text)', whiteSpace: 'pre-wrap'
+                                            fontSize: 14, lineHeight: 1.6, color: 'var(--clr-text)',
+                                            whiteSpace: 'pre-wrap', wordBreak: 'break-word', minHeight: 96
                                         }}>
                                             {selectedItem.message_body}
                                         </div>
