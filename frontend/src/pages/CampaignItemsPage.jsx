@@ -427,17 +427,18 @@ export default function CampaignItemsPage() {
                     >
                         {/* Header Section */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: showCampaignForm ? 16 : 8 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
                                 <div style={{ 
                                     width: 32, height: 32, borderRadius: 8, 
                                     background: 'var(--clr-accent-dim)', color: 'var(--clr-accent)',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    flexShrink: 0
                                 }}>
                                     <LayoutTemplate size={18} />
                                 </div>
                                 
                                 {showCampaignForm ? (
-                                    <div>
+                                    <div style={{ flex: 1 }}>
                                         <h3 style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2 }}>
                                             {campaignForm.title || 'Untitled Campaign'}
                                         </h3>
@@ -447,7 +448,7 @@ export default function CampaignItemsPage() {
                                     </div>
                                 ) : (
                                     <div 
-                                        style={{ position: 'relative', cursor: 'pointer' }} 
+                                        style={{ position: 'relative', cursor: 'pointer', flex: 1 }} 
                                         ref={campaignDropdownRef}
                                         onClick={(e) => { e.stopPropagation(); setShowCampaignDropdown(!showCampaignDropdown); }}
                                     >
@@ -461,7 +462,7 @@ export default function CampaignItemsPage() {
                                         
                                         {showCampaignDropdown && (
                                             <div style={{
-                                                position: 'absolute', top: '100%', left: 0, width: 260, marginTop: 8,
+                                                position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 8,
                                                 background: 'var(--clr-surface)', border: '1px solid var(--clr-border)',
                                                 borderRadius: 12, boxShadow: 'var(--shadow-lg)', zIndex: 50, padding: 8
                                             }} onClick={e => e.stopPropagation()}>
