@@ -346,7 +346,7 @@ export default function CampaignItemsPage() {
         <div className="campaign-page-wrapper">
             {/* Header */}
             <div className="page-header" style={{ marginBottom: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 20, width: '100%' }}>
                     <div>
                         <button 
                             className="btn btn-ghost btn-sm" 
