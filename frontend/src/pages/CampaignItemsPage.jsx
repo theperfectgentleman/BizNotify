@@ -33,6 +33,7 @@ export default function CampaignItemsPage() {
     const [showCreateMessage, setShowCreateMessage] = useState(false);
     const [saving, setSaving] = useState(false);
     const [showCampaignDropdown, setShowCampaignDropdown] = useState(false);
+    const [showCampaignForm, setShowCampaignForm] = useState(true);
     const [campaignSearch, setCampaignSearch] = useState('');
     const campaignDropdownRef = useRef(null);
 
@@ -309,7 +310,7 @@ export default function CampaignItemsPage() {
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.25fr', gap: 20, alignItems: 'start' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '0.95fr 1.45fr', gap: 20, alignItems: 'start' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                     <div className="card" style={{ background: 'var(--clr-surface)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14 }}>
@@ -402,60 +403,106 @@ export default function CampaignItemsPage() {
                         )}
 
                         <div style={{ marginTop: 14, borderTop: '1px solid var(--clr-border)', paddingTop: 14 }}>
-                            <div style={{ fontWeight: 600, marginBottom: 10 }}>{campaignMode === 'create' ? 'Create Campaign' : 'Edit Campaign'}</div>
+                            <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => setShowCampaignForm((value) => !value)}
+                                style={{ marginBottom: showCampaignForm ? 10 : 0 }}
+                            >
+                                <ChevronDown size={14} style={{ transform: showCampaignForm ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }} />
+                                {showCampaignForm ? 'Hide Campaign Form' : 'Show Campaign Form'}
+                            </button>
+
+                            {showCampaignForm && (
+                                <>
+                                    <div style={{ fontWeight: 600, marginBottom: 10 }}>{campaignMode === 'create' ? 'Create Campaign' : 'Edit Campaign'}</div>
+                                    <div className="form-group">
+                                        <label className="form-label">Title</label>
+                                        <input
+                                            className="form-input"
+                                            value={campaignForm.title}
+                                            onChange={(event) => setCampaignForm((prev) => ({ ...prev, title: event.target.value }))}
+                                            placeholder="e.g. Holiday Blast"
+                                        />
+                                    </div>
+                                    <div className="form-group" style={{ marginTop: 10 }}>
+                                        <label className="form-label">Description</label>
+                                        <textarea
+                                            className="form-textarea"
+                                            style={{ minHeight: 80 }}
+                                            value={campaignForm.description}
+                                            onChange={(event) => setCampaignForm((prev) => ({ ...prev, description: event.target.value }))}
+                                            placeholder="Campaign summary..."
+                                        />
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+                                        <div className="form-group">
+                                            <label className="form-label">Start Date</label>
+                                            <input
+                                                type="date"
+                                                className="form-input"
+                                                value={campaignForm.start_date}
+                                                onChange={(event) => setCampaignForm((prev) => ({ ...prev, start_date: event.target.value }))}
+                                            />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">End Date</label>
+                                            <input
+                                                type="date"
+                                                className="form-input"
+                                                value={campaignForm.end_date}
+                                                onChange={(event) => setCampaignForm((prev) => ({ ...prev, end_date: event.target.value }))}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="form-group" style={{ marginTop: 10 }}>
+                                        <label className="form-label">Target Reach</label>
+                                        <input
+                                            className="form-input"
+                                            value={campaignForm.target_reach}
+                                            onChange={(event) => setCampaignForm((prev) => ({ ...prev, target_reach: event.target.value }))}
+                                            placeholder="e.g. 10,000"
+                                        />
+                                    </div>
+                                    <div style={{ marginTop: 12 }}>
+                                        <button type="button" className="btn btn-primary" onClick={saveCampaign} disabled={saving}>
+                                            {saving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <Save size={14} />} {campaignMode === 'create' ? 'Create Campaign' : 'Save Campaign'}
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="card" style={{ opacity: 0.92 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                            <div style={{ fontWeight: 600 }}>Message Details</div>
+                            <StatusBadge status={selectedItem?.status || 'draft'} />
+                        </div>
+
+                        <fieldset disabled style={{ border: 'none', padding: 0, margin: 0 }}>
                             <div className="form-group">
                                 <label className="form-label">Title</label>
-                                <input
-                                    className="form-input"
-                                    value={campaignForm.title}
-                                    onChange={(event) => setCampaignForm((prev) => ({ ...prev, title: event.target.value }))}
-                                    placeholder="e.g. Holiday Blast"
-                                />
+                                <input className="form-input" value={selectedItem?.title || ''} readOnly />
                             </div>
                             <div className="form-group" style={{ marginTop: 10 }}>
-                                <label className="form-label">Description</label>
-                                <textarea
-                                    className="form-textarea"
-                                    style={{ minHeight: 80 }}
-                                    value={campaignForm.description}
-                                    onChange={(event) => setCampaignForm((prev) => ({ ...prev, description: event.target.value }))}
-                                    placeholder="Campaign summary..."
-                                />
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
-                                <div className="form-group">
-                                    <label className="form-label">Start Date</label>
-                                    <input
-                                        type="date"
-                                        className="form-input"
-                                        value={campaignForm.start_date}
-                                        onChange={(event) => setCampaignForm((prev) => ({ ...prev, start_date: event.target.value }))}
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">End Date</label>
-                                    <input
-                                        type="date"
-                                        className="form-input"
-                                        value={campaignForm.end_date}
-                                        onChange={(event) => setCampaignForm((prev) => ({ ...prev, end_date: event.target.value }))}
-                                    />
-                                </div>
+                                <label className="form-label">Schedule Date &amp; Time</label>
+                                <input className="form-input" value={selectedItem ? new Date(selectedItem.scheduled_at).toLocaleString() : ''} readOnly />
                             </div>
                             <div className="form-group" style={{ marginTop: 10 }}>
-                                <label className="form-label">Target Reach</label>
-                                <input
-                                    className="form-input"
-                                    value={campaignForm.target_reach}
-                                    onChange={(event) => setCampaignForm((prev) => ({ ...prev, target_reach: event.target.value }))}
-                                    placeholder="e.g. 10,000"
-                                />
+                                <label className="form-label">Channel</label>
+                                <input className="form-input" value={selectedItem ? (selectedItem.channel === 'whatsapp' ? 'WhatsApp' : 'SMS') : ''} readOnly />
                             </div>
-                            <div style={{ marginTop: 12 }}>
-                                <button type="button" className="btn btn-primary" onClick={saveCampaign} disabled={saving}>
-                                    {saving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <Save size={14} />} {campaignMode === 'create' ? 'Create Campaign' : 'Save Campaign'}
-                                </button>
+                            <div className="form-group" style={{ marginTop: 10 }}>
+                                <label className="form-label">Message Body</label>
+                                <textarea className="form-textarea" style={{ minHeight: 120 }} value={selectedItem?.message_body || ''} readOnly />
                             </div>
+                        </fieldset>
+
+                        <div style={{ marginTop: 12 }}>
+                            <button type="button" className="btn btn-secondary" disabled>
+                                <Edit3 size={14} /> Edit Message
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -657,37 +704,6 @@ export default function CampaignItemsPage() {
                         )}
                     </div>
 
-                    <div className="card" style={{ opacity: 0.92 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                            <div style={{ fontWeight: 600 }}>Message Details</div>
-                            <StatusBadge status={selectedItem?.status || 'draft'} />
-                        </div>
-
-                        <fieldset disabled style={{ border: 'none', padding: 0, margin: 0 }}>
-                            <div className="form-group">
-                                <label className="form-label">Title</label>
-                                <input className="form-input" value={selectedItem?.title || ''} readOnly />
-                            </div>
-                            <div className="form-group" style={{ marginTop: 10 }}>
-                                <label className="form-label">Schedule Date &amp; Time</label>
-                                <input className="form-input" value={selectedItem ? new Date(selectedItem.scheduled_at).toLocaleString() : ''} readOnly />
-                            </div>
-                            <div className="form-group" style={{ marginTop: 10 }}>
-                                <label className="form-label">Channel</label>
-                                <input className="form-input" value={selectedItem ? (selectedItem.channel === 'whatsapp' ? 'WhatsApp' : 'SMS') : ''} readOnly />
-                            </div>
-                            <div className="form-group" style={{ marginTop: 10 }}>
-                                <label className="form-label">Message Body</label>
-                                <textarea className="form-textarea" style={{ minHeight: 120 }} value={selectedItem?.message_body || ''} readOnly />
-                            </div>
-                        </fieldset>
-
-                        <div style={{ marginTop: 12 }}>
-                            <button type="button" className="btn btn-secondary" disabled>
-                                <Edit3 size={14} /> Edit Message
-                            </button>
-                        </div>
-                    </div>
                 </div>
             </div>
         </>
