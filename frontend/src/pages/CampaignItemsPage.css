@@ -1,0 +1,213 @@
+/* scoped styles for CampaignItemsPage */
+
+/* Layout Structure */
+.campaign-page-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 64px); /* Subtract topbar height */
+  overflow: hidden;
+  padding: 24px;
+}
+
+.campaign-layout {
+  display: grid;
+  grid-template-columns: 380px 1fr; /* Fixed sidebar width */
+  gap: 24px;
+  flex: 1;
+  min-height: 0; /* Necessary for nested scrolling */
+  overflow: hidden;
+}
+
+@media (max-width: 1024px) {
+  .campaign-layout {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+}
+
+.scroll-y {
+  overflow-y: auto;
+  padding-right: 4px; /* subtle scollbar padding */
+  height: 100%;
+}
+
+/* Custom Scrollbar for Webkit */
+.scroll-y::-webkit-scrollbar {
+  width: 6px;
+}
+.scroll-y::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-y::-webkit-scrollbar-thumb {
+  background-color: var(--clr-border-2);
+  border-radius: 20px;
+}
+
+/* Override card style for tighter fit */
+.panel-card {
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--clr-text);
+  margin-top: 4px;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: var(--clr-text-3);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Timeline Styles */
+.timeline-track {
+  position: relative;
+  padding-left: 24px; /* Space for the line */
+  padding-bottom: 40px;
+}
+
+.timeline-track::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 11px; /* Center of the padding-left (24px/2 approx) */
+  width: 2px;
+  background: var(--clr-border);
+  z-index: 0;
+}
+
+.timeline-node {
+  position: relative;
+  margin-bottom: 24px;
+  z-index: 1; /* Above the line */
+}
+
+.timeline-marker {
+  position: absolute;
+  left: -24px; /* Move back into the padding area */
+  top: 24px; /* Align with card content roughly */
+  width: 24px;
+  height: 24px;
+  background: var(--clr-surface);
+  border: 2px solid var(--clr-border-2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--clr-text-2);
+  transform: translateX(1px); /* Fine tune alignment */
+}
+
+.timeline-marker.active {
+  border-color: var(--clr-accent);
+  background: var(--clr-surface);
+  color: var(--clr-accent);
+  box-shadow: 0 0 0 4px var(--clr-accent-dim);
+}
+
+.timeline-card {
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.timeline-card:hover {
+  border-color: var(--clr-accent-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.timeline-card.active {
+  border-color: var(--clr-accent);
+  background: var(--clr-surface);
+  box-shadow: var(--shadow-md);
+}
+
+.timeline-card.active::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: -1px;
+  bottom: -1px;
+  width: 4px;
+  background: var(--clr-accent);
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+.timeline-details-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--clr-text-3);
+}
+
+.btn-add-step {
+  width: 100%;
+  padding: 16px;
+  border: 2px dashed var(--clr-border-2);
+  border-radius: var(--radius-md);
+  background: var(--clr-surface-2);
+  color: var(--clr-text-2);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-add-step:hover {
+  border-color: var(--clr-accent);
+  color: var(--clr-accent);
+  background: var(--clr-accent-dim);
+}
+
+/* Floating Input Group Enhancement */
+.floating-input-group {
+    position: relative;
+    margin-bottom: 16px;
+}
+.floating-input-group label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--clr-text-2);
+    margin-bottom: 4px;
+    display: block;
+}
