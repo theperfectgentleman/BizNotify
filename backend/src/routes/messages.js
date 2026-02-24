@@ -412,6 +412,50 @@ router.post('/campaigns', requireAuth, async (req, res) => {
     }
 });
 
+// PATCH /messages/campaigns/:campaignId - edit campaign details
+router.patch('/campaigns/:campaignId', requireAuth, async (req, res) => {
+    try {
+        const { campaignId } = req.params;
+        const { title, channel } = req.body;
+
+        const { rows: campaignRows } = await db.query(
+            `SELECT id, user_id, title, channel
+             FROM campaigns
+             WHERE id = $1`,
+            [campaignId]
+        );
+
+        const existing = campaignRows[0];
+        if (!existing || existing.user_id !== req.user.id) {
+            return res.status(404).json({ error: 'Campaign not found' });
+        }
+
+        const nextTitle = title !== undefined ? String(title || '').trim() : existing.title;
+        if (!nextTitle) {
+            return res.status(400).json({ error: 'title is required' });
+        }
+
+        const nextChannel = channel !== undefined
+            ? normalizeCampaignStorageChannel(channel)
+            : existing.channel;
+
+        const { rows: updatedRows } = await db.query(
+            `UPDATE campaigns
+             SET title = $2,
+                 channel = $3,
+                 updated_at = NOW()
+             WHERE id = $1
+             RETURNING *`,
+            [campaignId, nextTitle, nextChannel]
+        );
+
+        return res.json({ campaign: updatedRows[0] });
+    } catch (err) {
+        console.error('[messages/campaigns:update]', err);
+        return res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+    }
+});
+
 // GET /messages/campaigns/:campaignId/items
 router.get('/campaigns/:campaignId/items', requireAuth, async (req, res) => {
     try {
@@ -819,7 +863,7 @@ router.get('/logs', requireAuth, async (req, res) => {
 // GET /messages/campaigns - list campaigns
 router.get('/campaigns', requireAuth, async (req, res) => {
     try {
-        const { rows } = await db.query(`
+                const { rows } = await db.query(`
       SELECT c.*,
         COUNT(m.id) AS total_messages,
         COUNT(m.id) FILTER (WHERE m.status = 'delivered') AS delivered,
@@ -827,9 +871,10 @@ router.get('/campaigns', requireAuth, async (req, res) => {
         COUNT(m.id) FILTER (WHERE m.status = 'sent') AS sent
       FROM campaigns c
       LEFT JOIN messages m ON m.campaign_id = c.id
+            WHERE c.user_id = $1
       GROUP BY c.id
       ORDER BY c.created_at DESC
-    `);
+        `, [req.user.id]);
         res.json(rows);
     } catch (err) {
         console.error('[messages/campaigns]', err);

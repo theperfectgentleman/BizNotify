@@ -11,7 +11,7 @@ const navItems = [
     { to: '/app/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/app/contacts', icon: Users, label: 'Contacts' },
     { to: '/app/groups', icon: FolderOpen, label: 'Groups' },
-    { to: '/app/compose/campaign', icon: Send, label: 'Campaigns' },
+    { to: '/app/campaigns', icon: Send, label: 'Campaigns' },
     { to: '/app/compose/instant', icon: Zap, label: 'Instant Message' },
     { to: '/app/analytics', icon: BarChart2, label: 'Analytics' },
     { to: '/app/sender-ids', icon: Link, label: 'Sender IDs' },
