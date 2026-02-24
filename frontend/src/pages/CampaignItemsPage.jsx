@@ -435,16 +435,72 @@ export default function CampaignItemsPage() {
                                 }}>
                                     <LayoutTemplate size={18} />
                                 </div>
-                                <div>
-                                    <h3 style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2 }}>
-                                        {campaignForm.title || 'Untitled Campaign'}
-                                    </h3>
-                                    {!showCampaignForm && (
+                                
+                                {showCampaignForm ? (
+                                    <div>
+                                        <h3 style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2 }}>
+                                            {campaignForm.title || 'Untitled Campaign'}
+                                        </h3>
+                                        <div style={{ fontSize: 12, color: 'var(--clr-text-3)' }}>
+                                            {campaignMode === 'create' ? 'Creating new campaign' : 'Editing campaign'}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div 
+                                        style={{ position: 'relative', cursor: 'pointer' }} 
+                                        ref={campaignDropdownRef}
+                                        onClick={(e) => { e.stopPropagation(); setShowCampaignDropdown(!showCampaignDropdown); }}
+                                    >
+                                        <h3 style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            {campaignForm.title || 'Untitled Campaign'}
+                                            <ChevronDown size={16} style={{ color: 'var(--clr-text-3)' }} />
+                                        </h3>
                                         <div style={{ fontSize: 12, color: 'var(--clr-text-3)' }}>
                                             {campaignForm.start_date ? new Date(campaignForm.start_date).toLocaleDateString() : 'No date'} • {campaignForm.target_reach || '0'} users
                                         </div>
-                                    )}
-                                </div>
+                                        
+                                        {showCampaignDropdown && (
+                                            <div style={{
+                                                position: 'absolute', top: '100%', left: 0, width: 260, marginTop: 8,
+                                                background: 'var(--clr-surface)', border: '1px solid var(--clr-border)',
+                                                borderRadius: 12, boxShadow: 'var(--shadow-lg)', zIndex: 50, padding: 8
+                                            }} onClick={e => e.stopPropagation()}>
+                                                <input
+                                                    className="form-input"
+                                                    style={{ fontSize: 13, height: 36, marginBottom: 8 }}
+                                                    value={campaignSearch}
+                                                    onChange={(e) => setCampaignSearch(e.target.value)}
+                                                    placeholder="Find campaign..."
+                                                    autoFocus
+                                                />
+                                                <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                                                    {filteredCampaigns.map(c => (
+                                                        <button 
+                                                            key={c.id} 
+                                                            className="btn btn-ghost btn-sm" 
+                                                            style={{ width: '100%', justifyContent: 'flex-start', textAlign: 'left' }}
+                                                            onClick={() => { selectCampaign(c.id); setShowCampaignDropdown(false); }}
+                                                        >
+                                                            {c.title}
+                                                        </button>
+                                                    ))}
+                                                    {filteredCampaigns.length === 0 && (
+                                                        <div style={{ padding: 8, fontSize: 13, color: 'var(--clr-text-3)', textAlign: 'center' }}>No campaigns found</div>
+                                                    )}
+                                                </div>
+                                                <div style={{ borderTop: '1px solid var(--clr-border)', marginTop: 8, paddingTop: 8 }}>
+                                                    <button 
+                                                        className="btn btn-ghost btn-sm" 
+                                                        style={{ width: '100%', justifyContent: 'center', color: 'var(--clr-accent)' }}
+                                                        onClick={() => { startNewCampaign(); setShowCampaignForm(true); }}
+                                                    >
+                                                        <PlusCircle size={14} style={{ marginRight: 6 }} /> Create New Campaign
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
                             <div style={{ display: 'flex', gap: 4 }}>
@@ -453,68 +509,24 @@ export default function CampaignItemsPage() {
                                         className="btn btn-ghost btn-sm"
                                         onClick={(e) => { e.stopPropagation(); setShowCampaignForm(false); }}
                                     >
-                                        <ChevronDown size={16} style={{ transform: 'rotate(180deg)' }} />
+                                        <X size={16} style={{ marginRight: 4 }} /> Close
                                     </button>
                                 ) : (
-                                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                        {campaignMode === 'edit' && (
-                                            <>
-                                                 <button 
-                                                    className="btn btn-ghost btn-sm" 
-                                                    onClick={(e) => { e.stopPropagation(); startNewCampaign(); setShowCampaignForm(true); }}
-                                                    title="Create New Campaign"
-                                                    style={{ padding: 6, height: 28, width: 28, justifyContent: 'center', color: 'var(--clr-text-2)' }}
-                                                >
-                                                    <PlusCircle size={16} />
-                                                </button>
-                                                
-                                                {/* Switcher in collapsed view */}
-                                                {campaigns.length > 0 && (
-                                                    <div style={{ position: 'relative' }} ref={campaignDropdownRef} onClick={e => e.stopPropagation()}>
-                                                        <button
-                                                            type="button"
-                                                            className="btn btn-ghost btn-sm"
-                                                            onClick={() => setShowCampaignDropdown(!showCampaignDropdown)}
-                                                            style={{ color: 'var(--clr-text-2)' }}
-                                                        >
-                                                            Switch <ChevronDown size={14} style={{ marginLeft: 4 }} />
-                                                        </button>
-                                                        {showCampaignDropdown && (
-                                                            <div style={{
-                                                                position: 'absolute', top: '100%', right: 0, width: 260,
-                                                                background: 'var(--clr-surface)', border: '1px solid var(--clr-border)',
-                                                                borderRadius: 12, boxShadow: 'var(--shadow-lg)', zIndex: 50, padding: 8
-                                                            }}>
-                                                                <input
-                                                                    className="form-input"
-                                                                    style={{ fontSize: 13, height: 36, marginBottom: 8 }}
-                                                                    value={campaignSearch}
-                                                                    onChange={(e) => setCampaignSearch(e.target.value)}
-                                                                    placeholder="Find campaign..."
-                                                                    autoFocus
-                                                                />
-                                                                <div style={{ maxHeight: 200, overflowY: 'auto' }}>
-                                                                    {filteredCampaigns.map(c => (
-                                                                        <button 
-                                                                            key={c.id} 
-                                                                            className="btn btn-ghost btn-sm" 
-                                                                            style={{ width: '100%', justifyContent: 'flex-start', textAlign: 'left' }}
-                                                                            onClick={() => { selectCampaign(c.id); setShowCampaignDropdown(false); }}
-                                                                        >
-                                                                            {c.title}
-                                                                        </button>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </>
-                                        )}
-                                        <button className="btn btn-ghost btn-sm" style={{ color: 'var(--clr-text-3)' }}>
-                                            <Edit3 size={14} />
+                                    campaignMode === 'edit' ? (
+                                        <button 
+                                            className="btn btn-secondary btn-sm"
+                                            onClick={(e) => { e.stopPropagation(); setShowCampaignForm(true); }}
+                                        >
+                                            <Edit3 size={14} style={{ marginRight: 6 }} /> Edit
                                         </button>
-                                    </div>
+                                    ) : (
+                                        <button 
+                                            className="btn btn-primary btn-sm"
+                                            onClick={(e) => { e.stopPropagation(); setShowCampaignForm(true); }}
+                                        >
+                                            <PlusCircle size={14} style={{ marginRight: 6 }} /> New
+                                        </button>
+                                    )
                                 )}
                             </div>
                         </div>
@@ -588,9 +600,16 @@ export default function CampaignItemsPage() {
 
                                 <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--clr-border)', display: 'flex', gap: 10 }}>
                                     <button 
-                                        className="btn btn-primary" 
+                                        className="btn btn-ghost" 
                                         style={{ flex: 1, justifyContent: 'center' }}
-                                        onClick={(e) => { saveCampaign(); setShowCampaignForm(false); }}
+                                        onClick={(e) => { e.stopPropagation(); setShowCampaignForm(false); }}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button 
+                                        className="btn btn-primary" 
+                                        style={{ flex: 2, justifyContent: 'center' }}
+                                        onClick={(e) => { e.stopPropagation(); saveCampaign(); setShowCampaignForm(false); }}
                                         disabled={saving}
                                     >
                                         {saving ? <span className="spinner" /> : <Save size={16} style={{ marginRight: 8 }} />}
