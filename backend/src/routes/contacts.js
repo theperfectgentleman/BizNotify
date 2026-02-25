@@ -21,7 +21,13 @@ router.get('/', requireAuth, async (req, res) => {
         }
         if (search) {
             params.push(`%${search}%`);
-            where += ` AND (c.first_name ILIKE $${params.length} OR c.last_name ILIKE $${params.length} OR c.phone_number ILIKE $${params.length})`;
+            where += ` AND (
+                CONCAT_WS(' ', COALESCE(c.first_name, ''), COALESCE(c.last_name, '')) ILIKE $${params.length}
+                OR c.phone_number ILIKE $${params.length}
+                OR TO_CHAR(c.created_at, 'YYYY-MM-DD HH24:MI:SS') ILIKE $${params.length}
+                OR TO_CHAR(c.created_at, 'YYYY-MM-DD') ILIKE $${params.length}
+                OR c.created_at::text ILIKE $${params.length}
+            )`;
         }
 
         params.push(Number(limit), offset);

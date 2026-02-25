@@ -7,8 +7,9 @@ import './ContactsPage.css';
 
 function downloadCsvTemplate() {
     const headers = 'phone_number,first_name,last_name';
-    const example = '+2348012345678,John,Doe';
-    const csv = [headers, example].join('\n');
+    const row1 = '+2348012345678,John,Doe';
+    const row2 = '+2348098765432,Jane,Smith';
+    const csv = [headers, row1, row2].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -579,6 +580,14 @@ export default function ContactsPage() {
                     aria-label="Add contact"
                 >
                     <Plus size={15} />
+                </button>
+                <button
+                    className="btn btn-icon btn-secondary"
+                    onClick={downloadCsvTemplate}
+                    title="Download template"
+                    aria-label="Download template"
+                >
+                    <Download size={15} />
                 </button>
                 <button
                     className="btn btn-icon btn-secondary"
