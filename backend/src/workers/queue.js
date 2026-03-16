@@ -15,6 +15,22 @@ let boss;
 const JOB_NAME = 'send-message';
 const INSTANT_BULK_JOB_NAME = 'send-instant-bulk';
 const CAMPAIGN_ITEM_DISPATCH_JOB_NAME = 'dispatch-campaign-item';
+const DB_INSERT_BATCH_SIZE = Math.max(1, Number(process.env.QUEUE_DB_INSERT_BATCH_SIZE) || 250);
+const JOB_ENQUEUE_BATCH_SIZE = Math.max(1, Number(process.env.QUEUE_ENQUEUE_BATCH_SIZE) || 250);
+
+async function mapInBatches(items, batchSize, mapper) {
+    const results = [];
+
+    for (let index = 0; index < items.length; index += batchSize) {
+        const batch = items.slice(index, index + batchSize);
+        const batchResults = await Promise.all(
+            batch.map((item, batchIndex) => mapper(item, index + batchIndex))
+        );
+        results.push(...batchResults);
+    }
+
+    return results;
+}
 
 async function initQueue() {
     boss = new PgBoss(process.env.DATABASE_URL);
@@ -152,15 +168,17 @@ async function processCampaignItemDispatch(job) {
             return;
         }
 
-        const insertPromises = recipients.map((recipient) =>
-            client.query(
-                `INSERT INTO messages (campaign_id, campaign_item_id, contact_id, status)
-                 VALUES ($1, $2, $3, 'queued')
-                 RETURNING id`,
-                [item.campaign_id, campaignItemId, recipient.id]
-            )
+        const insertResults = await mapInBatches(
+            recipients,
+            DB_INSERT_BATCH_SIZE,
+            (recipient) =>
+                client.query(
+                    `INSERT INTO messages (campaign_id, campaign_item_id, contact_id, status)
+                     VALUES ($1, $2, $3, 'queued')
+                     RETURNING id`,
+                    [item.campaign_id, campaignItemId, recipient.id]
+                )
         );
-        const insertResults = await Promise.all(insertPromises);
 
         const jobs = recipients.map((recipient, index) => ({
             messageId: insertResults[index].rows[0].id,
@@ -271,10 +289,10 @@ async function enqueueCampaignJobs(campaignId, jobs) {
         expireInHours: 24,
     };
 
-    await Promise.all(
-        jobs.map((j) =>
-            boss.send(JOB_NAME, { campaignId, ...j }, jobOptions)
-        )
+    await mapInBatches(
+        jobs,
+        JOB_ENQUEUE_BATCH_SIZE,
+        (job) => boss.send(JOB_NAME, { campaignId, ...job }, jobOptions)
     );
 }
 
@@ -294,8 +312,10 @@ async function enqueueInstantBulkJobs({ recipients, messageBody, channel, custom
         batches.push(recipients.slice(index, index + chunkSize));
     }
 
-    await Promise.all(
-        batches.map((batch) =>
+    await mapInBatches(
+        batches,
+        JOB_ENQUEUE_BATCH_SIZE,
+        (batch) =>
             boss.send(
                 INSTANT_BULK_JOB_NAME,
                 {
@@ -308,7 +328,6 @@ async function enqueueInstantBulkJobs({ recipients, messageBody, channel, custom
                 },
                 jobOptions
             )
-        )
     );
 
     return batches.length;

@@ -10,6 +10,24 @@ const {
 } = require('../workers/queue');
 const { normalizePhone, isValidPhone } = require('../utils/phone');
 
+const AUDIENCE_MUTATION_BATCH_SIZE = Math.max(1, Number(process.env.AUDIENCE_MUTATION_BATCH_SIZE) || 250);
+const MESSAGE_INSERT_BATCH_SIZE = Math.max(1, Number(process.env.MESSAGE_INSERT_BATCH_SIZE) || 250);
+const SCHEDULE_BATCH_SIZE = Math.max(1, Number(process.env.SCHEDULE_BATCH_SIZE) || 250);
+
+async function mapInBatches(items, batchSize, mapper) {
+    const results = [];
+
+    for (let index = 0; index < items.length; index += batchSize) {
+        const batch = items.slice(index, index + batchSize);
+        const batchResults = await Promise.all(
+            batch.map((item, batchIndex) => mapper(item, index + batchIndex))
+        );
+        results.push(...batchResults);
+    }
+
+    return results;
+}
+
 function normalizeCampaignChannel(value) {
     const channel = String(value || 'generic').toLowerCase();
     if (channel === 'whatsapp') return 'whatsapp';
@@ -80,28 +98,30 @@ async function replaceCampaignItemAudience(client, campaignItemId, groupIds = []
     await client.query(`DELETE FROM campaign_item_contacts WHERE campaign_item_id = $1`, [campaignItemId]);
 
     if (Array.isArray(groupIds) && groupIds.length > 0) {
-        await Promise.all(
-            groupIds.map((groupId) =>
+        await mapInBatches(
+            groupIds,
+            AUDIENCE_MUTATION_BATCH_SIZE,
+            (groupId) =>
                 client.query(
                     `INSERT INTO campaign_item_groups (campaign_item_id, group_id)
                      VALUES ($1, $2)
                      ON CONFLICT (campaign_item_id, group_id) DO NOTHING`,
                     [campaignItemId, groupId]
                 )
-            )
         );
     }
 
     if (Array.isArray(contactIds) && contactIds.length > 0) {
-        await Promise.all(
-            contactIds.map((contactId) =>
+        await mapInBatches(
+            contactIds,
+            AUDIENCE_MUTATION_BATCH_SIZE,
+            (contactId) =>
                 client.query(
                     `INSERT INTO campaign_item_contacts (campaign_item_id, contact_id)
                      VALUES ($1, $2)
                      ON CONFLICT (campaign_item_id, contact_id) DO NOTHING`,
                     [campaignItemId, contactId]
                 )
-            )
         );
     }
 }
@@ -211,6 +231,13 @@ router.post('/send', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'No eligible contacts found (check opt-out status)' });
         }
 
+        const maxCampaignRecipients = Number(process.env.CAMPAIGN_MAX_RECIPIENTS || 50000);
+        if (Number.isFinite(maxCampaignRecipients) && maxCampaignRecipients > 0 && contacts.length > maxCampaignRecipients) {
+            return res.status(400).json({
+                error: `Recipient count exceeds limit (${maxCampaignRecipients}). Reduce selected groups or contacts.`
+            });
+        }
+
         const client = await db.getClient();
         let campaign;
         let campaignItem;
@@ -247,13 +274,15 @@ router.post('/send', requireAuth, async (req, res) => {
             await replaceCampaignItemAudience(client, campaignItem.id, group_ids || [], contact_ids || []);
 
             // Create message records
-            const messageInserts = contacts.map((c) =>
-                client.query(
-                    `INSERT INTO messages (campaign_id, campaign_item_id, contact_id, status) VALUES ($1, $2, $3, 'queued') RETURNING id`,
-                    [campaign.id, campaignItem.id, c.id]
-                )
+            const messageResults = await mapInBatches(
+                contacts,
+                MESSAGE_INSERT_BATCH_SIZE,
+                (contact) =>
+                    client.query(
+                        `INSERT INTO messages (campaign_id, campaign_item_id, contact_id, status) VALUES ($1, $2, $3, 'queued') RETURNING id`,
+                        [campaign.id, campaignItem.id, contact.id]
+                    )
             );
-            const messageResults = await Promise.all(messageInserts);
 
             await client.query('COMMIT');
 
@@ -279,8 +308,10 @@ router.post('/send', requireAuth, async (req, res) => {
             });
 
             if (scheduled_at) {
-                await Promise.all(
-                    jobs.map((jobData) => enqueueScheduledJob(campaign.id, jobData, scheduled_at))
+                await mapInBatches(
+                    jobs,
+                    SCHEDULE_BATCH_SIZE,
+                    (jobData) => enqueueScheduledJob(campaign.id, jobData, scheduled_at)
                 );
             } else {
                 await enqueueCampaignJobs(campaign.id, jobs);
@@ -381,15 +412,17 @@ router.post('/instant', requireAuth, async (req, res) => {
         try {
             await client.query('BEGIN');
 
-            const inserts = recipients.map((recipient) =>
-                client.query(
-                    `INSERT INTO messages (contact_id, target_phone, status)
-                     VALUES ($1, $2, 'queued')
-                     RETURNING id`,
-                    [recipient.contactId, recipient.phone]
-                )
+            const insertResults = await mapInBatches(
+                recipients,
+                MESSAGE_INSERT_BATCH_SIZE,
+                (recipient) =>
+                    client.query(
+                        `INSERT INTO messages (contact_id, target_phone, status)
+                         VALUES ($1, $2, 'queued')
+                         RETURNING id`,
+                        [recipient.contactId, recipient.phone]
+                    )
             );
-            const insertResults = await Promise.all(inserts);
 
             persistedRecipients = recipients.map((recipient, idx) => ({
                 phone: recipient.phone,
